@@ -1,0 +1,16 @@
+# Web 框架
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+
+# PostgreSQL 数据库驱动
+psycopg2-binary>=2.9.9
+
+# 环境变量管理
+python-dotenv>=1.0.0
+
+# 数据可视化
+plotly>=5.18.0
+
+# 数据处理
+pandas>=2.1.3
+

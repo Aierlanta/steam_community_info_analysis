@@ -1,0 +1,18 @@
+[project]
+name = "steam-community-info-analysis"
+version = "1.0.0"
+description = "Steam 游戏时长追踪系统"
+requires-python = ">=3.10"
+
+dependencies = [
+    "psycopg2-binary>=2.9.9",
+    "python-dotenv>=1.0.0",
+]
+
+[tool.setuptools]
+py-modules = []
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+

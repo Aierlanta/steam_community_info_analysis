@@ -1,0 +1,31 @@
+# Replit 配置文件 - 后端数据采集器
+
+# 运行命令（用于测试）
+run = "python collector.py"
+
+# 语言设置
+language = "python3"
+
+# 启动命令
+entrypoint = "collector.py"
+
+# Python 版本
+[nix]
+channel = "stable-23_11"
+
+# 部署配置
+[deployment]
+run = ["python", "collector.py"]
+deploymentTarget = "cloudrun"
+
+# 环境变量（在 Replit Secrets 中配置）
+# STEAM_API_KEY
+# DATABASE_URL
+
+# 说明：
+# 1. 将此文件放在后端项目根目录
+# 2. 在 Replit Secrets 中配置环境变量
+# 3. 使用 Replit Scheduler 设置定时任务：
+#    - 命令: python collector.py
+#    - 间隔: */10 * * * * (每10分钟)
+

@@ -1,86 +1,282 @@
-# steam_community_info_analysis
+# Steam 游戏时长追踪系统
 
-基于 Steam Web API 的“隐身模式”游玩时间推断工具：
-后端定时轮询 `IPlayerService/GetOwnedGames`，每次将完整快照（含全部游戏）作为一条 JSON 记录写入 Postgres；前端/分析按相邻快照的时长增量推断可能的游玩区间并可视化。
+基于 Steam Web API 的"隐身模式"游玩时间推断工具。通过定期轮询玩家游戏数据并对比快照差异，推断玩家的实际游玩时间和习惯。
 
-## 功能概览
-- 仅使用官方 Web API（需要目标用户的“游戏详情”公开）
-- 后端：每次运行拉一次 `GetOwnedGames`，将快照 JSON 写入 Postgres（表 `playtime_snapshots_json`），若内容未变则跳过写入
-- 前端（FastAPI）：从数据库读取最近一周的快照 JSON，提供 API `/api/users`、`/api/sessions?steamid=...`，并附带 React 可视化页面
-- 本地文件快照方案（`storage.py`）保留为备选，但默认使用 Postgres JSON
-- 推断逻辑：当某游戏 `playtime_forever` 在相邻快照间增加，就在两次快照时间窗内生成一个“可能的游玩 session”，时长为增量分钟数
+## 🎯 功能特性
 
-## 目录结构
-- `backend_run_once_pg.py`：后端一次性采集脚本（面向 Replit bot/定时任务）
-- `steam_api.py`：封装 `ResolveVanityURL` / `GetOwnedGames`
-- `storage.py`：基于文件的 JSON 快照存储（可选备用）
-- `pg_storage.py`：Postgres JSON 存储，每次一条 JSONB 快照记录，支持从环境变量或 `.env` 读取 `DATABASE_URL`
-- `frontend_api.py`：FastAPI 服务，API：`/api/users`、`/api/sessions`，并挂载静态前端 `/web`
-- `web/index.html`：React + Tailwind（CDN + Babel）可视化页面
-- `config_loader.py`：从 `config.toml` 读取 Steam API Key、玩家列表等（本地或后端采集时用）
-- `b_replit/.replit`、`f_replit/.replit`：后端/前端在 Replit 部署的模板 Run 配置
+- **自动数据采集**：后端定时调用 Steam API，获取玩家游戏列表和时长
+- **智能去重存储**：只在数据发生变化时保存快照，节省存储空间
+- **时间推断算法**：基于相邻快照的时长差异，推断游玩时间区间
+- **可视化分析**：使用 Plotly 生成交互式图表，直观展示游玩数据
+- **多玩家支持**：可同时追踪多个 Steam 用户的游戏时长
 
-## 后端采集（Postgres JSON 快照，默认）
-1) 配置 Steam Web API Key：
-   - 推荐用环境变量 `STEAM_WEB_API_KEY`；或在 `config.toml` 的 `api_key` 字段填写（公开仓库勿提交）
-2) 配置目标用户：
-   - `config.toml` -> `[[steam.players]]`
-   - 若有 64 位 steamid：`steamid = "..."`，`vanity_url` 为空
-   - 若只有自定义 ID（例：morbisol）：`steamid = ""`，`vanity_url = "morbisol"`
-3) 配置 Postgres 连接：
-   - 环境变量 `DATABASE_URL` 或 `PG_CONN_STR`，或在项目根 `.env` 写：
-     ```
-     DATABASE_URL="postgresql://user:pass@host:port/db?sslmode=require"
-     ```
-4) 运行采集（循环模式，按 `polling.interval_seconds` 周期拉取并写入表 `playtime_snapshots_json`，若内容未变则跳过写入）：
-   ```bash
-   uv run python main.py
-   ```
-   - 可以用 Ctrl+C 退出；如需只跑一次，可调用 `collector.run_collector(config_path)` 自行控制。
+## 📁 项目结构
 
-表结构（自动创建）：
+```
+steam_community_info_analysis/
+├── backend/                    # 后端数据采集
+│   ├── collector.py           # 主采集脚本
+│   ├── requirements.txt       # Python 依赖
+│   ├── pyproject.toml         # uv 项目配置
+│   ├── .env.example           # 环境变量示例
+│   ├── .replit                # Replit 配置
+│   └── README.md              # 后端说明文档
+├── frontend/                   # 前端可视化
+│   ├── app.py                 # FastAPI 应用
+│   ├── requirements.txt       # Python 依赖
+│   ├── pyproject.toml         # uv 项目配置
+│   ├── .env.example           # 环境变量示例
+│   ├── .replit                # Replit 配置
+│   └── templates/             # HTML 模板目录
+├── config.toml                # 全局配置文件
+└── init_db.sql                # 数据库初始化脚本
+```
+
+## 🚀 快速开始
+
+### 1. 环境准备
+
+#### 必需项
+
+- Python 3.10+
+- PostgreSQL 数据库
+- Steam Web API Key（[申请地址](https://steamcommunity.com/dev/apikey)）
+
+#### 推荐工具
+
+- [uv](https://github.com/astral-sh/uv) - 快速的 Python 包管理器
+
+### 2. 数据库初始化
+
+```bash
+# 连接到 PostgreSQL 数据库
+psql -U your_username -d your_database
+
+# 执行初始化脚本
+\i init_db.sql
+```
+
+或使用命令行：
+
+```bash
+psql -U your_username -d your_database -f init_db.sql
+```
+
+### 3. 配置文件设置
+
+#### 修改 `config.toml`
+
+```toml
+[steam]
+api_key = "your_steam_api_key_here"
+
+[[steam.players]]
+steamid = "76561198958724637"
+vanity_url = "your_steam_username"
+
+[polling]
+interval_seconds = 600  # 轮询间隔（秒）
+```
+
+#### 配置后端环境变量
+
+```bash
+cd backend
+cp .env.example .env
+# 编辑 .env 文件，填写实际配置
+```
+
+`.env` 内容：
+
+```env
+STEAM_API_KEY=your_steam_api_key_here
+DATABASE_URL=postgresql://user:password@host:port/database
+```
+
+#### 配置前端环境变量
+
+```bash
+cd frontend
+cp .env.example .env
+# 编辑 .env 文件，填写数据库连接
+```
+
+### 4. 本地运行
+
+#### 后端（数据采集器）
+
+```bash
+cd backend
+
+# 使用 uv 安装依赖
+uv sync
+
+# 运行采集器（单次）
+uv run python collector.py
+```
+
+#### 前端（可视化服务）
+
+```bash
+cd frontend
+
+# 使用 uv 安装依赖
+uv pip install -r requirements.txt
+
+# 启动 Web 服务
+uv run uvicorn app:app --host 0.0.0.0 --port 8000
+```
+
+访问 <http://localhost:8000> 查看可视化界面。
+
+## ☁️ Replit 部署
+
+### 部署后端（数据采集器）
+
+1. 在 Replit 创建新 Python 项目 `steam-collector`
+2. 上传 `backend/` 目录下的所有文件
+3. 上传根目录的 `config.toml` 文件
+4. 在 Replit **Secrets** 中配置环境变量：
+   - `STEAM_API_KEY`: 你的 Steam API 密钥
+   - `DATABASE_URL`: PostgreSQL 连接字符串
+5. 在 **Replit Scheduler** 中添加定时任务：
+   - 命令: `python collector.py`
+   - Cron 表达式: `*/10 * * * *` （每 10 分钟运行）
+
+### 部署前端（可视化服务）
+
+1. 在 Replit 创建新 Python 项目 `steam-dashboard`
+2. 上传 `frontend/` 目录下的所有文件
+3. 在 Replit **Secrets** 中配置：
+   - `DATABASE_URL`: PostgreSQL 连接字符串（与后端相同）
+4. 点击 **Run** 按钮启动服务
+5. 启用 **Always On** 保持服务运行
+
+部署完成后，Replit 会提供一个公开访问的 URL。
+
+## 📊 功能说明
+
+### 后端采集器
+
+- **Steam API 调用**：使用 `IPlayerService/GetOwnedGames` 接口获取玩家游戏数据
+- **数据去重**：比较游戏 ID 列表和 `playtime_forever` 字段，只有变化时才保存
+- **多玩家支持**：从 `config.toml` 读取玩家列表，依次采集数据
+- **错误处理**：网络异常、API 限流等情况的容错处理
+
+### 前端可视化
+
+#### 主要路由
+
+- `/` - 玩家列表首页
+- `/player/{player_id}` - 玩家详细分析页面（默认显示最近 7 天）
+- `/player/{player_id}?days=14` - 自定义天数（1-30 天）
+
+#### API 端点
+
+- `GET /api/players` - 获取所有玩家列表
+- `GET /api/snapshots/{player_id}?days=7` - 获取原始快照数据
+- `GET /api/analysis/{player_id}?days=7` - 获取分析后的数据（JSON）
+
+#### 可视化图表
+
+1. **游戏时长推断时间轴（甘特图）**
+   - 横轴：日期时间
+   - 纵轴：游戏名称
+   - 色块：推断的游玩时间区间
+
+2. **游戏时长分布（饼图）**
+   - 显示各游戏时长占比
+   - Top 10 游戏 + 其他
+
+3. **游戏时长排名（柱状图）**
+   - 按时长降序排列
+   - 显示 Top 15 游戏
+
+4. **游玩活跃度分析（柱状图）**
+   - 按 24 小时统计游玩活跃度
+   - 帮助了解游玩习惯
+
+## 🔧 技术栈
+
+### 后端
+
+- **Python 3.10+**
+- **requests** - HTTP 请求
+- **psycopg2** - PostgreSQL 驱动
+- **python-dotenv** - 环境变量管理
+- **toml** - 配置文件解析
+
+### 前端
+
+- **FastAPI** - 现代 Web 框架
+- **Uvicorn** - ASGI 服务器
+- **Plotly** - 交互式可视化
+- **Pandas** - 数据处理
+
+### 数据库
+
+- **PostgreSQL** - 关系型数据库
+- **JSONB** - 存储游戏数据快照
+
+## 📝 数据库结构
+
+```sql
+CREATE TABLE game_snapshots (
+    id SERIAL PRIMARY KEY,
+    player_id VARCHAR(20) NOT NULL,      -- Steam ID
+    player_name VARCHAR(100),             -- 玩家名称
+    snapshot_time TIMESTAMP NOT NULL,     -- 快照时间
+    games_data JSONB NOT NULL,            -- 游戏数据（JSON）
+    created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+### 快照数据格式
+
 ```json
 {
-  "captured_at_utc": "TIMESTAMPTZ",
-  "steamid": "TEXT",
-  "payload": {
-    "captured_at_utc": "2024-01-01T12:00:00+00:00",
-    "steamid": "7656...",
-    "games": [
-      {"appid": 570, "game_name": "Dota 2", "playtime_forever": 1234},
-      {"appid": 730, "game_name": "Counter-Strike 2", "playtime_forever": 5678}
-    ]
-  }
+  "game_count": 150,
+  "games": [
+    {
+      "appid": 730,
+      "name": "Counter-Strike 2",
+      "playtime_forever": 12345,
+      "playtime_2weeks": 240
+    }
+  ]
 }
 ```
 
+## 🎮 使用场景
 
-## 前端服务（本地或 Replit autoscale）
-1) 启动：
-   ```bash
-   uv run uvicorn frontend_api:app --host 0.0.0.0 --port 8000
-   ```
-2) API：
-   - `GET /api/users` -> 返回数据库中已采集到的 steamid 列表（去重）
-   - `GET /api/sessions?steamid=...` -> 返回该玩家最近一周的推断 session 列表（基于快照 JSON 增量）
-3) 可视化页面：
-   - 访问 `http://127.0.0.1:8000/web/index.html`
-   - 顶部导航 + Hero + 玩家标签；每个玩家包含：按游戏聚合条形图、按日期柱状图、最近 session 列表、磁吸按钮等
+1. **追踪游戏时长**：即使在 Steam 隐身模式下，也能推断实际游玩时间
+2. **游玩习惯分析**：了解自己或朋友的游戏偏好和活跃时段
+3. **游戏统计**：查看各游戏的总游玩时长和排名
+4. **数据可视化**：直观的图表展示，便于分析和分享
 
-## 推断逻辑说明
-- 必须有至少两次快照，且某游戏的 `playtime_forever` 出现正向增量
-- session 的时间窗口 = 上一次快照时间 ~ 本次快照时间
-- session 的时长 = `playtime_forever` 增量（分钟）
-- 精度取决于：采集间隔 + Steam 本身更新延迟；隐身场景下无法实时在线，只能用总时长跳变做“模糊区间”
+## ⚠️ 注意事项
 
-## 文件快照方案（可选）
-- 如果不想依赖数据库，可改用 `storage.py`（本地 JSON 目录），并将采集/前端切换回文件存储。当前默认未启用。
+1. **API 限流**：Steam API 有调用频率限制，建议轮询间隔不少于 5 分钟
+2. **隐私设置**：只能获取公开个人资料的玩家数据
+3. **时间推断**：推断的游玩时间是基于快照差异的估算，可能与实际有偏差
+4. **数据存储**：长期运行会积累大量快照数据，注意数据库容量
 
-## Replit 部署提示
-- 后端（bot/定时任务，Postgres JSON）：用 `b_replit/.replit`，命令 `python main.py`；Secrets：`STEAM_WEB_API_KEY`、`DATABASE_URL`
-- 前端（autoscale）：用 `f_replit/.replit`，命令 `python -m uvicorn frontend_api:app --host 0.0.0.0 --port 8000`；Secrets：`DATABASE_URL`（以及 `STEAM_WEB_API_KEY` 供读取配置）
+## 🔒 隐私声明
 
-## 常见问题
-- 前端显示“暂无玩家”：检查数据库连接和 `playtime_snapshots_json` 是否已有采集数据。
-- 前端显示玩家但 session 为 0：需要多跑几次后端，且目标用户在此期间时长有增长；没有增量就不会生成 session。
-- 本地启动时 404 favicon / sw.js：可以忽略，不影响功能。
+本工具仅使用 Steam 公开 API 获取公开数据，不涉及任何隐私信息的非法获取。请遵守 Steam 使用条款和相关法律法规。
+
+## 📄 许可证
+
+MIT License
+
+## 🤝 贡献
+
+欢迎提交 Issue 和 Pull Request！
+
+## 📮 联系方式
+
+如有问题或建议，请通过 GitHub Issues 联系。
+
+---
+
+**Happy Gaming! 🎮**
