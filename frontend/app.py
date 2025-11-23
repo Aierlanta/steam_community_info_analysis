@@ -438,7 +438,11 @@ if not db_url:
     logger.error("未配置 DATABASE_URL 环境变量")
     db_manager = None
 else:
+    # 打印数据库连接信息（隐藏密码）
+    masked_url = db_url.split('@')[1] if '@' in db_url else 'unknown'
+    logger.info(f"正在连接数据库: {masked_url}")
     db_manager = DatabaseManager(db_url)
+    logger.info("数据库管理器初始化完成")
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -452,6 +456,7 @@ async def index(request: Request):
         })
     
     players = db_manager.get_all_players()
+    logger.info(f"查询到 {len(players)} 个玩家")
     return templates.TemplateResponse("index.html", {"request": request, "players": players})
 
 
@@ -509,6 +514,53 @@ async def api_get_players():
     
     players = db_manager.get_all_players()
     return {"players": players}
+
+
+@app.get("/api/debug/status")
+async def debug_status():
+    """调试接口：查看当前数据库连接状态和数据概况"""
+    if not db_manager:
+        return {
+            "status": "error",
+            "message": "数据库未配置",
+            "db_url": "未设置 DATABASE_URL"
+        }
+    
+    try:
+        # 获取数据库连接信息（隐藏密码）
+        db_url = os.getenv('DATABASE_URL', '')
+        masked_url = db_url.split('@')[1] if '@' in db_url else 'unknown'
+        
+        # 查询数据
+        players = db_manager.get_all_players()
+        
+        # 获取总快照数
+        conn = db_manager.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM game_snapshots")
+        total_snapshots = cursor.fetchone()[0]
+        cursor.close()
+        conn.close()
+        
+        return {
+            "status": "ok",
+            "db_host": masked_url,
+            "total_players": len(players),
+            "total_snapshots": total_snapshots,
+            "players": [
+                {
+                    "player_id": p['player_id'],
+                    "player_name": p['player_name'],
+                    "snapshot_count": p['snapshot_count']
+                } for p in players
+            ]
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e),
+            "db_host": masked_url if 'masked_url' in locals() else 'unknown'
+        }
 
 
 @app.get("/api/snapshots/{player_id}")
