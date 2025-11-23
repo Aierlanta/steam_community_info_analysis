@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block content %}
+<header>
+    <h1>Steam 游戏时长追踪</h1>
+    <p>基于快照推断的高精度游戏时长可视化分析系统</p>
+</header>
+
+{% if not players %}
+<div class="glass-panel animate-fade-in" style="text-align: center; padding: 60px;">
+    <h2>暂无数据</h2>
+    <p style="color: var(--text-secondary); margin-bottom: 20px;">请先运行后端采集器获取玩家数据</p>
+    <div class="loader"></div>
+</div>
+{% else %}
+<div class="player-grid">
+    {% for player in players %}
+    <div class="glass-panel player-card animate-fade-in stagger-{{ loop.index0 % 4 + 1 }}">
+        <h3>{{ player.player_name }}</h3>
+        <div class="player-info">
+            <div class="info-item">
+                <span>Steam ID</span>
+                <span class="info-value">{{ player.player_id }}</span>
+            </div>
+            <div class="info-item">
+                <span>快照数量</span>
+                <span class="info-value">{{ player.snapshot_count }}</span>
+            </div>
+            <div class="info-item">
+                <span>首次记录</span>
+                <span class="info-value">{{ player.first_snapshot.strftime('%Y-%m-%d') }}</span>
+            </div>
+            <div class="info-item">
+                <span>最近更新</span>
+                <span class="info-value">{{ player.last_snapshot.strftime('%Y-%m-%d %H:%M') }}</span>
+            </div>
+        </div>
+        <a href="/player/{{ player.player_id }}" class="btn" style="width: 100%">
+            查看详细分析
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round" style="margin-left: 8px;">
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+                <polyline points="12 5 19 12 12 19"></polyline>
+            </svg>
+        </a>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

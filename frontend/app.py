@@ -11,8 +11,10 @@ from typing import List, Dict, Any, Optional, Tuple
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
@@ -33,6 +35,12 @@ app = FastAPI(
     description="基于快照推断的 Steam 游戏时长可视化分析",
     version="1.0.0"
 )
+
+# 挂载静态文件
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# 初始化模板
+templates = Jinja2Templates(directory="templates")
 
 
 class DatabaseManager:
@@ -267,7 +275,12 @@ class PlotlyVisualizer:
             yaxis_title="游戏",
             height=max(400, len(games) * 40),
             hovermode='closest',
-            xaxis=dict(type='date')
+            xaxis=dict(type='date', gridcolor='rgba(255,255,255,0.1)'),
+            yaxis=dict(gridcolor='rgba(255,255,255,0.1)'),
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='#f8fafc'),
+            margin=dict(l=20, r=20, t=40, b=20)
         )
         
         return fig
@@ -312,7 +325,11 @@ class PlotlyVisualizer:
         
         fig.update_layout(
             title="游戏时长分布（分钟）",
-            height=500
+            height=500,
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='#f8fafc'),
+            margin=dict(l=20, r=20, t=40, b=20)
         )
         
         return fig
@@ -356,7 +373,12 @@ class PlotlyVisualizer:
             xaxis_title="时长（分钟）",
             yaxis_title="游戏",
             height=max(400, len(games) * 30),
-            yaxis=dict(autorange="reversed")
+            yaxis=dict(autorange="reversed", gridcolor='rgba(255,255,255,0.1)'),
+            xaxis=dict(gridcolor='rgba(255,255,255,0.1)'),
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='#f8fafc'),
+            margin=dict(l=20, r=20, t=40, b=20)
         )
         
         return fig
@@ -386,7 +408,13 @@ class PlotlyVisualizer:
             title="游玩活跃度热力图（按小时）",
             xaxis_title="时间（小时）",
             yaxis_title="活跃次数",
-            height=400
+            height=400,
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='#f8fafc'),
+            xaxis=dict(gridcolor='rgba(255,255,255,0.1)'),
+            yaxis=dict(gridcolor='rgba(255,255,255,0.1)'),
+            margin=dict(l=20, r=20, t=40, b=20)
         )
         
         return fig
@@ -402,133 +430,6 @@ class PlotlyVisualizer:
             colors.append(f"rgb({int(rgb[0]*255)},{int(rgb[1]*255)},{int(rgb[2]*255)})")
         return colors
     
-    @staticmethod
-    def combine_charts(
-        gantt_fig: go.Figure,
-        pie_fig: go.Figure,
-        bar_fig: go.Figure,
-        heatmap_fig: go.Figure,
-        player_name: str,
-        days: int
-    ) -> str:
-        """
-        组合所有图表生成完整的 HTML 页面
-        
-        Args:
-            gantt_fig: 甘特图
-            pie_fig: 饼图
-            bar_fig: 柱状图
-            heatmap_fig: 热力图
-            player_name: 玩家名称
-            days: 统计天数
-            
-        Returns:
-            HTML 字符串
-        """
-        gantt_html = gantt_fig.to_html(full_html=False, include_plotlyjs='cdn')
-        pie_html = pie_fig.to_html(full_html=False, include_plotlyjs=False)
-        bar_html = bar_fig.to_html(full_html=False, include_plotlyjs=False)
-        heatmap_html = heatmap_fig.to_html(full_html=False, include_plotlyjs=False)
-        
-        html = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Steam 游戏时长分析 - {player_name}</title>
-    <style>
-        body {{
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            margin: 0;
-            padding: 20px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-        }}
-        .container {{
-            max-width: 1400px;
-            margin: 0 auto;
-            background: white;
-            padding: 30px;
-            border-radius: 15px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
-        }}
-        h1 {{
-            color: #333;
-            text-align: center;
-            margin-bottom: 10px;
-        }}
-        .subtitle {{
-            text-align: center;
-            color: #666;
-            margin-bottom: 30px;
-            font-size: 16px;
-        }}
-        .chart-section {{
-            margin-bottom: 40px;
-            padding: 20px;
-            background: #f8f9fa;
-            border-radius: 10px;
-        }}
-        .chart-grid {{
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 30px;
-            margin-top: 30px;
-        }}
-        @media (max-width: 1024px) {{
-            .chart-grid {{
-                grid-template-columns: 1fr;
-            }}
-        }}
-        .back-link {{
-            display: inline-block;
-            margin-bottom: 20px;
-            padding: 10px 20px;
-            background: #667eea;
-            color: white;
-            text-decoration: none;
-            border-radius: 5px;
-            transition: background 0.3s;
-        }}
-        .back-link:hover {{
-            background: #5568d3;
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <a href="/" class="back-link">← 返回玩家列表</a>
-        <h1>🎮 Steam 游戏时长分析</h1>
-        <div class="subtitle">
-            玩家: <strong>{player_name}</strong> | 统计周期: 最近 {days} 天
-        </div>
-        
-        <div class="chart-section">
-            <h2>📊 游戏时长推断时间轴</h2>
-            {gantt_html}
-        </div>
-        
-        <div class="chart-grid">
-            <div class="chart-section">
-                <h2>🥧 游戏时长分布</h2>
-                {pie_html}
-            </div>
-            <div class="chart-section">
-                <h2>📈 游戏时长排名</h2>
-                {bar_html}
-            </div>
-        </div>
-        
-        <div class="chart-section">
-            <h2>🔥 游玩活跃度分析</h2>
-            {heatmap_html}
-        </div>
-    </div>
-</body>
-</html>
-"""
-        return html
 
 
 # 初始化数据库管理器
@@ -541,149 +442,22 @@ else:
 
 
 @app.get("/", response_class=HTMLResponse)
-async def index():
+async def index(request: Request):
     """首页 - 显示玩家列表"""
     if not db_manager:
-        return "<h1>错误：未配置数据库连接</h1>"
+        return templates.TemplateResponse("index.html", {
+            "request": request,
+            "players": [],
+            "error": "未配置数据库连接"
+        })
     
     players = db_manager.get_all_players()
-    
-    if not players:
-        html = """
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Steam 游戏时长追踪系统</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 50px;
-            text-align: center;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            color: white;
-        }
-        .container {
-            background: white;
-            color: #333;
-            padding: 50px;
-            border-radius: 15px;
-            max-width: 600px;
-            margin: 100px auto;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>🎮 Steam 游戏时长追踪系统</h1>
-        <p>暂无玩家数据，请先运行后端采集器采集数据。</p>
-    </div>
-</body>
-</html>
-"""
-        return html
-    
-    # 生成玩家列表
-    player_items = ""
-    for player in players:
-        player_items += f"""
-        <div class="player-card">
-            <h3>{player['player_name']}</h3>
-            <p class="player-id">Steam ID: {player['player_id']}</p>
-            <p>快照数量: {player['snapshot_count']}</p>
-            <p>首次采集: {player['first_snapshot'].strftime('%Y-%m-%d %H:%M')}</p>
-            <p>最新采集: {player['last_snapshot'].strftime('%Y-%m-%d %H:%M')}</p>
-            <a href="/player/{player['player_id']}" class="view-btn">查看分析</a>
-        </div>
-        """
-    
-    html = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Steam 游戏时长追踪系统</title>
-    <style>
-        body {{
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            margin: 0;
-            padding: 20px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-        }}
-        .container {{
-            max-width: 1200px;
-            margin: 0 auto;
-        }}
-        h1 {{
-            color: white;
-            text-align: center;
-            margin-bottom: 40px;
-            font-size: 36px;
-        }}
-        .player-grid {{
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 20px;
-        }}
-        .player-card {{
-            background: white;
-            padding: 25px;
-            border-radius: 10px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-            transition: transform 0.3s, box-shadow 0.3s;
-        }}
-        .player-card:hover {{
-            transform: translateY(-5px);
-            box-shadow: 0 8px 25px rgba(0,0,0,0.3);
-        }}
-        .player-card h3 {{
-            margin-top: 0;
-            color: #333;
-            font-size: 24px;
-        }}
-        .player-card p {{
-            color: #666;
-            margin: 8px 0;
-        }}
-        .player-id {{
-            font-family: monospace;
-            font-size: 12px;
-            color: #999;
-        }}
-        .view-btn {{
-            display: inline-block;
-            margin-top: 15px;
-            padding: 10px 20px;
-            background: #667eea;
-            color: white;
-            text-decoration: none;
-            border-radius: 5px;
-            transition: background 0.3s;
-        }}
-        .view-btn:hover {{
-            background: #5568d3;
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>🎮 Steam 游戏时长追踪系统</h1>
-        <div class="player-grid">
-            {player_items}
-        </div>
-    </div>
-</body>
-</html>
-"""
-    return html
+    return templates.TemplateResponse("index.html", {"request": request, "players": players})
 
 
 @app.get("/player/{player_id}", response_class=HTMLResponse)
 async def player_dashboard(
+    request: Request,
     player_id: str,
     days: int = Query(default=7, ge=1, le=30, description="统计天数")
 ):
@@ -695,20 +469,11 @@ async def player_dashboard(
     snapshots = db_manager.get_player_snapshots(player_id, days)
     
     if not snapshots:
-        return f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>无数据</title>
-</head>
-<body style="font-family: Arial; text-align: center; margin-top: 100px;">
-    <h1>未找到玩家数据</h1>
-    <p>玩家 ID: {player_id}</p>
-    <a href="/">返回首页</a>
-</body>
-</html>
-"""
+        return templates.TemplateResponse("error.html", {
+            "request": request,
+            "title": "未找到玩家数据",
+            "message": f"无法找到玩家 ID {player_id} 的快照数据，请确认后端采集器是否已运行。"
+        })
     
     player_name = snapshots[0]['player_name']
     
@@ -725,13 +490,15 @@ async def player_dashboard(
     bar_fig = visualizer.create_bar_chart(game_totals)
     heatmap_fig = visualizer.create_heatmap(hour_activity)
     
-    # 组合生成 HTML
-    html = visualizer.combine_charts(
-        gantt_fig, pie_fig, bar_fig, heatmap_fig,
-        player_name, days
-    )
-    
-    return html
+    return templates.TemplateResponse("dashboard.html", {
+        "request": request,
+        "player_name": player_name,
+        "days": days,
+        "gantt_chart": gantt_fig.to_html(full_html=False, include_plotlyjs=False),
+        "pie_chart": pie_fig.to_html(full_html=False, include_plotlyjs=False),
+        "bar_chart": bar_fig.to_html(full_html=False, include_plotlyjs=False),
+        "heatmap_chart": heatmap_fig.to_html(full_html=False, include_plotlyjs=False)
+    })
 
 
 @app.get("/api/players")

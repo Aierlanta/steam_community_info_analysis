@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block title %}提示 - Steam 游戏时长追踪{% endblock %}
+
+{% block content %}
+<div class="glass-panel animate-fade-in"
+    style="text-align: center; padding: 60px; max-width: 600px; margin: 100px auto;">
+    <h2 style="justify-content: center; margin-bottom: 20px;">{{ title }}</h2>
+    <p style="color: var(--text-secondary); margin-bottom: 30px; font-size: 1.1rem;">{{ message }}</p>
+    <a href="/" class="btn">
+        返回首页
+    </a>
+</div>
+{% endblock %}
