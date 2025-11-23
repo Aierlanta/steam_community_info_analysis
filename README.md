@@ -99,6 +99,12 @@ DATABASE_URL=postgresql://user:password@host:port/database
 cd frontend
 cp .env.example .env
 # 编辑 .env 文件，填写数据库连接
+# 可选：设置时区（默认 Asia/Shanghai）
+# Windows PowerShell 示例：
+#   setx APP_TIMEZONE "Asia/Shanghai"
+# Linux/macOS 示例：
+#   export APP_TIMEZONE="Asia/Shanghai"
+# 其他可用时区见 IANA tz 数据库，例如 "UTC"、"America/Los_Angeles"
 ```
 
 ### 4. 本地运行

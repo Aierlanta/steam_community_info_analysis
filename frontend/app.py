@@ -6,8 +6,9 @@ Steam 游戏时长可视化分析前端
 
 import os
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional, Tuple
+from zoneinfo import ZoneInfo
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
@@ -28,6 +29,20 @@ logger = logging.getLogger(__name__)
 
 # 加载环境变量
 load_dotenv()
+DEFAULT_TZ_NAME = os.getenv("APP_TIMEZONE", "Asia/Shanghai")
+
+
+def _load_app_timezone() -> ZoneInfo:
+    """加载应用时区，配置项 APP_TIMEZONE，无效时回退 UTC。"""
+    try:
+        return ZoneInfo(DEFAULT_TZ_NAME)
+    except Exception:
+        logger.warning("APP_TIMEZONE=%s 无效，回退 UTC", DEFAULT_TZ_NAME)
+        return ZoneInfo("UTC")
+
+
+APP_TZ = _load_app_timezone()
+UTC = timezone.utc
 
 # 创建 FastAPI 应用
 app = FastAPI(
@@ -73,7 +88,19 @@ class DatabaseManager:
             cursor.close()
             conn.close()
             
-            return [dict(p) for p in players]
+            def _as_app_tz(dt: Optional[datetime]) -> Optional[datetime]:
+                if not dt:
+                    return dt
+                return dt.astimezone(APP_TZ) if dt.tzinfo else dt.replace(tzinfo=UTC).astimezone(APP_TZ)
+
+            result = []
+            for p in players:
+                item = dict(p)
+                item["first_snapshot"] = _as_app_tz(item.get("first_snapshot"))
+                item["last_snapshot"] = _as_app_tz(item.get("last_snapshot"))
+                result.append(item)
+            
+            return result
             
         except Exception as e:
             logger.error(f"获取玩家列表失败: {e}")
@@ -94,7 +121,7 @@ class DatabaseManager:
             conn = self.get_connection()
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             
-            since_time = datetime.now() - timedelta(days=days)
+            since_time = datetime.now(UTC) - timedelta(days=days)
             
             cursor.execute("""
                 SELECT id, player_id, player_name, snapshot_time, games_data
@@ -107,7 +134,15 @@ class DatabaseManager:
             cursor.close()
             conn.close()
             
-            return [dict(s) for s in snapshots]
+            result = []
+            for s in snapshots:
+                item = dict(s)
+                ts = item.get("snapshot_time")
+                if ts:
+                    item["snapshot_time"] = ts.astimezone(APP_TZ) if ts.tzinfo else ts.replace(tzinfo=UTC).astimezone(APP_TZ)
+                result.append(item)
+            
+            return result
             
         except Exception as e:
             logger.error(f"获取快照失败: {e}")

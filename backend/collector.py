@@ -7,7 +7,7 @@ Steam 游戏时长数据采集器
 import os
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 import requests
 import psycopg2
@@ -222,7 +222,7 @@ class SteamCollector:
                 INSERT INTO game_snapshots (player_id, player_name, snapshot_time, games_data)
                 VALUES (%s, %s, %s, %s)
                 """,
-                (player_id, player_name, datetime.now(), Json(games_data))
+                (player_id, player_name, datetime.now(timezone.utc), Json(games_data))
             )
             self.conn.commit()
             cursor.close()
