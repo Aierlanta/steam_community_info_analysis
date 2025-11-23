@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import List, Optional
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from pg_storage import PgPlaytimeSnapshot, PgPlaytimeStorage
@@ -86,8 +87,5 @@ def get_users() -> List[dict]:
 
 
 @app.get("/")
-def root() -> dict:
-    return {
-        "message": "Steam playtime sessions API",
-        "endpoints": ["/api/sessions?steamid=..."],
-    }
+def root_redirect():
+    return RedirectResponse(url="/web/index.html", status_code=302)
