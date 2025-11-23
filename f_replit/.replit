@@ -1,4 +1,0 @@
-language = "python"
-entrypoint = "frontend_api.py"
-run = "uv run python -m uvicorn frontend_api:app --host 0.0.0.0 --port 8000"
-

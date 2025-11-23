@@ -1,4 +1,0 @@
-language = "python"
-entrypoint = "backend_run_once_pg.py"
-run = "uv run backend_run_once_pg.py"
-
