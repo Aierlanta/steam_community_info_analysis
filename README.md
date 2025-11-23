@@ -71,7 +71,7 @@ psql -U your_username -d your_database -f init_db.sql
 api_key = "your_steam_api_key_here"
 
 [[steam.players]]
-steamid = "76561198958724637"
+steamid = "xxxxxxxx"
 vanity_url = "your_steam_username"
 
 [polling]
