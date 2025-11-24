@@ -1,24 +1,31 @@
-# Replit 配置 - Steam 数据采集后端
+# Replit 配置文件 - Steam 数据采集后端
 
-# 运行配置
-run = "python collector.py"
+language = "python3"
 
-# 环境变量（在 Replit Secrets 中配置）
+# 入口文件
+entrypoint = "collector.py"
+
+# 运行命令
+run = ["sh", "-c", "cd /home/runner/workspace/backend && uv sync && uv run python collector.py"]
+
+# 构建配置
+[build]
+# 构建时安装依赖
+run = ["sh", "-c", "cd /home/runner/workspace/backend && uv sync"]
+
+# Nix 包管理
+[nix]
+channel = "stable-25_05"
+packages = ["python312"]
+
+# 部署配置
+[deployment]
+deploymentTarget = "scheduled"
+# 生产环境运行命令
+run = ["sh", "-c", "cd /home/runner/workspace/backend && uv sync --no-dev && uv run python collector.py"]
+
+# 环境变量
 [env]
 PYTHONIOENCODING = "utf-8"
 PYTHONUNBUFFERED = "1"
-
-# 入口点
-entrypoint = "collector.py"
-
-# Python 语言配置
-[nix]
-channel = "stable-24_05"
-
-[[ports]]
-localPort = 8080
-externalPort = 80
-
-[deployment]
-run = ["sh", "-c", "python collector.py"]
-deploymentTarget = "cloudrun"
+UV_PROJECT_ENVIRONMENT = "/home/runner/workspace/backend/.venv"
