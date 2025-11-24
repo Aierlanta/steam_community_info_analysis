@@ -2,6 +2,16 @@
 
 基于 Steam Web API 的"隐身模式"游玩时间推断工具。通过定期轮询玩家游戏数据并对比快照差异，推断玩家的实际游玩时间和习惯。
 
+## 预览
+<img width="2560" height="1306" alt="image" src="https://github.com/user-attachments/assets/e9b63ef7-0811-47cb-958a-7644e203b4b6" />
+
+<img width="2560" height="1300" alt="image" src="https://github.com/user-attachments/assets/81cb278f-101e-4b25-aeda-598c2761ce8a" />
+
+<img width="2560" height="1440" alt="image" src="https://github.com/user-attachments/assets/24334be3-daaa-4be5-9cc9-8b1a6d2de105" />
+
+
+
+
 ## 🎯 功能特性
 
 - **自动数据采集**：后端定时调用 Steam API，获取玩家游戏列表和时长
