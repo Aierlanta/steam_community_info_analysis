@@ -1,32 +1,30 @@
 # Replit 主配置文件（根目录）
-# 用于在根目录打开项目时的配置
 
 language = "python3"
 
 # 入口文件
 entrypoint = "backend/collector.py"
 
-# 运行命令 - 运行后端采集器
+# 运行命令
 run = ["sh", "-c", "cd backend && uv sync && uv run python collector.py"]
 
 # 构建配置
 [build]
-# 构建时安装后端依赖
+# 构建时安装依赖
 run = ["sh", "-c", "cd backend && uv sync"]
 
-# Nix 包管理
+# Nix 包管理 - 直接安装 uv
 [nix]
 channel = "stable-25_05"
-packages = ["python312"]
+packages = ["python312", "uv"]
 
 # 部署配置
 [deployment]
 deploymentTarget = "scheduled"
-# 定时任务：每次运行前同步依赖，然后执行采集
+# 定时任务
 run = ["sh", "-c", "cd backend && uv sync --no-dev && uv run python collector.py"]
 
 # 环境变量
 [env]
 PYTHONIOENCODING = "utf-8"
 PYTHONUNBUFFERED = "1"
-

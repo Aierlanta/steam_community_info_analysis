@@ -13,19 +13,18 @@ run = ["sh", "-c", "cd /home/runner/workspace/backend && uv sync && uv run pytho
 # 构建时安装依赖
 run = ["sh", "-c", "cd /home/runner/workspace/backend && uv sync"]
 
-# Nix 包管理
+# Nix 包管理 - 直接安装 uv
 [nix]
 channel = "stable-25_05"
-packages = ["python312"]
+packages = ["python312", "uv"]
 
 # 部署配置
 [deployment]
 deploymentTarget = "scheduled"
-# 生产环境运行命令
+# 定时任务运行命令
 run = ["sh", "-c", "cd /home/runner/workspace/backend && uv sync --no-dev && uv run python collector.py"]
 
 # 环境变量
 [env]
 PYTHONIOENCODING = "utf-8"
 PYTHONUNBUFFERED = "1"
-UV_PROJECT_ENVIRONMENT = "/home/runner/workspace/backend/.venv"
