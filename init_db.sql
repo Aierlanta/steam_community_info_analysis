@@ -9,9 +9,9 @@ CREATE TABLE IF NOT EXISTS game_snapshots (
     id SERIAL PRIMARY KEY,
     player_id VARCHAR(20) NOT NULL,
     player_name VARCHAR(100),
-    snapshot_time TIMESTAMP NOT NULL,
+    snapshot_time TIMESTAMPTZ NOT NULL,  -- 使用带时区的时间戳
     games_data JSONB NOT NULL,
-    created_at TIMESTAMP DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW()  -- 使用带时区的时间戳
 );
 
 -- 创建索引以优化查询性能
@@ -32,9 +32,9 @@ COMMENT ON TABLE game_snapshots IS 'Steam 玩家游戏拥有数据快照表';
 COMMENT ON COLUMN game_snapshots.id IS '主键 ID';
 COMMENT ON COLUMN game_snapshots.player_id IS '玩家 Steam ID（64位）';
 COMMENT ON COLUMN game_snapshots.player_name IS '玩家显示名称';
-COMMENT ON COLUMN game_snapshots.snapshot_time IS '快照采集时间';
-COMMENT ON COLUMN game_snapshots.games_data IS '游戏数据（JSON 格式，包含游戏列表和时长）';
-COMMENT ON COLUMN game_snapshots.created_at IS '记录创建时间';
+COMMENT ON COLUMN game_snapshots.snapshot_time IS '快照采集时间（UTC时区）';
+COMMENT ON COLUMN game_snapshots.games_data IS '游戏数据（JSON 格式，包含游戏列表和时长。来源：web_scraper 或 steam_api）';
+COMMENT ON COLUMN game_snapshots.created_at IS '记录创建时间（UTC时区）';
 
 -- 查询示例
 -- 1. 获取某玩家最新快照

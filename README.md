@@ -1,45 +1,99 @@
 # Steam 游戏时长追踪分析工具
 
-基于 Steam Web API 的"隐身模式"游玩时间推断工具。通过定期轮询玩家游戏数据并对比快照差异，推断玩家的实际游玩时间和习惯。
+> 🔄 **V2.0 (爬虫版本)** - 通过爬取 Steam 个人主页获取实时游戏数据
 
-## 预览
+基于网页爬虫的游玩时间推断工具。通过定期爬取玩家 Steam 个人主页的"最新动态"，获取最近玩过的游戏及时长变化，推断玩家的实际游玩时间和习惯。
+
+## 📋 目录
+
+- [预览](#预览)
+- [功能特性](#功能特性)
+- [系统架构](#系统架构)
+- [项目结构](#项目结构)
+- [快速开始](#快速开始)
+- [部署指南](#部署指南)
+- [数据格式](#数据格式)
+- [常见问题](#常见问题)
+
+## 🎨 预览
+
 <img width="2560" height="1306" alt="image" src="https://github.com/user-attachments/assets/e9b63ef7-0811-47cb-958a-7644e203b4b6" />
 
 <img width="2560" height="1300" alt="image" src="https://github.com/user-attachments/assets/81cb278f-101e-4b25-aeda-598c2761ce8a" />
 
 <img width="2560" height="1440" alt="image" src="https://github.com/user-attachments/assets/24334be3-daaa-4be5-9cc9-8b1a6d2de105" />
 
-
-
-
 ## 🎯 功能特性
 
-- **自动数据采集**：后端定时调用 Steam API，获取玩家游戏列表和时长
-- **智能去重存储**：只在数据发生变化时保存快照，节省存储空间
-- **时间推断算法**：基于相邻快照的时长差异，推断游玩时间区间
-- **可视化分析**：使用 Plotly 生成交互式图表，直观展示游玩数据
-- **多玩家支持**：可同时追踪多个 Steam 用户的游戏时长
+### V2.0 新特性 ⭐
+
+- **🕷️ 网页爬虫**: 爬取 Steam 个人主页"最新动态"，获取实时数据
+- **🔐 Cookie 支持**: 支持 Steam Cookie 登录，访问"仅好友可见"的资料
+- **⏰ 时区自动转换**: 后端统一 UTC 存储，前端自动转换为本地时区
+- **🎯 精准追踪**: 获取最近3个游戏的实时时长变化
+
+### 核心功能
+
+- **自动数据采集**: 后端定时爬取 Steam 个人主页，获取游戏时长变化
+- **智能去重存储**: 只在数据发生变化时保存快照，节省存储空间
+- **时间推断算法**: 基于相邻快照的时长差异，推断游玩时间区间
+- **可视化分析**: 使用 Plotly 生成交互式图表，直观展示游玩数据
+  - 📊 时间轴甘特图（游玩时段）
+  - 🥧 游戏时长饼图
+  - 📈 游戏排行柱状图
+  - 🔥 活跃时段热力图
+- **多玩家支持**: 可同时追踪多个 Steam 用户的游戏时长
+
+## 🏗️ 系统架构
+
+```
+┌─────────────────┐
+│   Steam 社区    │
+│   个人主页      │
+└────────┬────────┘
+         │ 爬取
+         ▼
+┌─────────────────┐      ┌──────────────┐
+│  后端采集器      │─────▶│  PostgreSQL  │
+│  (Python)       │ 存储 │   数据库     │
+│  - 爬虫         │      └──────┬───────┘
+│  - 去重         │             │ 查询
+│  - 定时任务     │             │
+└─────────────────┘             ▼
+                        ┌──────────────┐
+                        │  前端可视化  │
+                        │  (FastAPI)   │
+                        │  - 数据分析  │
+                        │  - Plotly图表│
+                        └──────────────┘
+```
 
 ## 📁 项目结构
 
 ```
 steam_community_info_analysis/
-├── backend/                    # 后端数据采集
-│   ├── collector.py           # 主采集脚本
-│   ├── requirements.txt       # Python 依赖
-│   ├── pyproject.toml         # uv 项目配置
-│   ├── .env.example           # 环境变量示例
-│   ├── .replit                # Replit 配置
-│   └── README.md              # 后端说明文档
-├── frontend/                   # 前端可视化
-│   ├── app.py                 # FastAPI 应用
-│   ├── requirements.txt       # Python 依赖
-│   ├── pyproject.toml         # uv 项目配置
-│   ├── .env.example           # 环境变量示例
-│   ├── .replit                # Replit 配置
-│   └── templates/             # HTML 模板目录
-├── config.toml                # 全局配置文件
-└── init_db.sql                # 数据库初始化脚本
+├── backend/                      # 后端数据采集
+│   ├── collector.py             # 主采集脚本
+│   ├── steam_scraper.py         # Steam 爬虫模块
+│   ├── requirements.txt         # Python 依赖
+│   ├── pyproject.toml           # uv 项目配置
+│   ├── .replit                  # Replit 配置
+│   └── .env.example             # 环境变量示例
+├── frontend/                     # 前端可视化
+│   ├── app.py                   # FastAPI 应用
+│   ├── templates/               # HTML 模板目录
+│   │   └── dashboard.html
+│   ├── requirements.txt         # Python 依赖
+│   ├── pyproject.toml           # uv 项目配置
+│   ├── .replit                  # Replit 配置
+│   └── .env.example             # 环境变量示例
+├── config.toml                  # 全局配置文件（玩家列表）
+├── init_db.sql                  # 数据库初始化脚本
+├── init_database.py             # 数据库初始化工具
+├── README.md                    # 项目说明（本文件）
+├── README_SCRAPER.md            # 爬虫版本详细说明
+├── COOKIE_GUIDE.md              # Cookie 获取和配置指南
+└── REPLIT_DEPLOYMENT_GUIDE.md   # Replit 部署完整指南
 ```
 
 ## 🚀 快速开始
@@ -48,251 +102,396 @@ steam_community_info_analysis/
 
 #### 必需项
 
-- Python 3.10+
-- PostgreSQL 数据库
-- Steam Web API Key（[申请地址](https://steamcommunity.com/dev/apikey)）
+- **Python 3.10+**
+- **uv** (Python 包管理器)
+- **PostgreSQL 数据库**（推荐使用 [Neon](https://neon.tech)）
 
-#### 推荐工具
-
-- [uv](https://github.com/astral-sh/uv) - 快速的 Python 包管理器
-
-### 2. 数据库初始化
+#### 安装 uv
 
 ```bash
-# 连接到 PostgreSQL 数据库
-psql -U your_username -d your_database
+# Windows (PowerShell)
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 
-# 执行初始化脚本
-\i init_db.sql
+# macOS/Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-或使用命令行：
+### 2. 克隆项目
 
 ```bash
-psql -U your_username -d your_database -f init_db.sql
+git clone https://github.com/yourusername/steam_community_info_analysis.git
+cd steam_community_info_analysis
 ```
 
-### 3. 配置文件设置
+### 3. 配置数据库
 
-#### 修改 `config.toml`
+#### 3.1 创建数据库
+
+使用 [Neon](https://neon.tech) 或其他 PostgreSQL 服务：
+
+1. 创建新数据库
+2. 复制连接字符串（格式：`postgresql://user:pass@host:port/db`）
+
+#### 3.2 初始化表结构
+
+**方式 1：使用 psql 命令行**
+
+```bash
+psql "你的数据库连接字符串" -f init_db.sql
+```
+
+**方式 2：使用 Python 脚本**
+
+```bash
+# 先配置 .env 文件中的 DATABASE_URL
+python init_database.py
+```
+
+### 4. 配置玩家列表
+
+编辑 `config.toml`，添加要追踪的玩家：
 
 ```toml
-[steam]
-api_key = "your_steam_api_key_here"
+[[steam.players]]
+steamid = "76561198958724637"
+vanity_url = "morbisol"  # 可选，个性化URL
 
 [[steam.players]]
-steamid = "xxxxxxxx"
-vanity_url = "your_steam_username"
-
-[polling]
-interval_seconds = 600  # 轮询间隔（秒）
+steamid = "76561198817252303"
+# 如果没有个性化URL，只填 steamid 即可
 ```
 
-#### 配置后端环境变量
+**如何获取 Steam ID？**
+
+访问 [steamid.io](https://steamid.io)，输入个人主页链接，复制 **steamID64**。
+
+### 5. 配置后端
 
 ```bash
 cd backend
-cp .env.example .env
-# 编辑 .env 文件，填写实际配置
 ```
 
-`.env` 内容：
+创建 `.env` 文件：
 
 ```env
-STEAM_API_KEY=your_steam_api_key_here
-DATABASE_URL=postgresql://user:password@host:port/database
+# 数据库连接（必需）
+DATABASE_URL=postgresql://user:pass@host:port/db?sslmode=require
+
+# Steam Cookie（可选，用于访问好友资料）
+# STEAM_COOKIES=sessionid=xxx; steamLoginSecure=xxx
 ```
 
-#### 配置前端环境变量
+**获取 Steam Cookie**: 参考 [`COOKIE_GUIDE.md`](COOKIE_GUIDE.md)
+
+安装依赖：
+
+```bash
+uv sync
+```
+
+### 6. 配置前端
 
 ```bash
 cd frontend
-cp .env.example .env
-# 编辑 .env 文件，填写数据库连接
-# 可选：设置时区（默认 Asia/Shanghai）
-# Windows PowerShell 示例：
-#   setx APP_TIMEZONE "Asia/Shanghai"
-# Linux/macOS 示例：
-#   export APP_TIMEZONE="Asia/Shanghai"
-# 其他可用时区见 IANA tz 数据库，例如 "UTC"、"America/Los_Angeles"
 ```
 
-### 4. 本地运行
+创建 `.env` 文件：
 
-#### 后端（数据采集器）
+```env
+# 数据库连接（与后端相同）
+DATABASE_URL=postgresql://user:pass@host:port/db?sslmode=require
+```
+
+安装依赖：
+
+```bash
+uv sync
+```
+
+### 7. 运行测试
+
+#### 测试后端采集
 
 ```bash
 cd backend
-
-# 使用 uv 安装依赖
-uv sync
-
-# 运行采集器（单次）
 uv run python collector.py
 ```
 
-#### 前端（可视化服务）
+预期输出：
+
+```
+2025-11-24 15:00:00 - INFO - 数据库连接成功
+2025-11-24 15:00:00 - INFO - 开始采集玩家数据: 76561198958724637
+2025-11-24 15:00:03 - INFO - 成功爬取到 3 个最新游戏
+2025-11-24 15:00:05 - INFO - 成功保存玩家快照（3 个游戏）
+```
+
+#### 启动前端服务
 
 ```bash
 cd frontend
-
-# 使用 uv 安装依赖
-uv pip install -r requirements.txt
-
-# 启动 Web 服务
 uv run uvicorn app:app --host 0.0.0.0 --port 8000
 ```
 
 访问 <http://localhost:8000> 查看可视化界面。
 
-## ☁️ Replit 部署
+## 📦 部署指南
 
-### 部署后端（数据采集器）
+### Replit 部署（推荐）
 
-1. 在 Replit 创建新 Python 项目 `steam-collector`
-2. 上传 `backend/` 目录下的所有文件
-3. 上传根目录的 `config.toml` 文件
-4. 在 Replit **Secrets** 中配置环境变量：
-   - `STEAM_API_KEY`: 你的 Steam API 密钥
-   - `DATABASE_URL`: PostgreSQL 连接字符串
-5. 在 **Replit Scheduler** 中添加定时任务：
-   - 命令: `python collector.py`
-   - Cron 表达式: `*/10 * * * *` （每 10 分钟运行）
+详细步骤请查看 [`REPLIT_DEPLOYMENT_GUIDE.md`](REPLIT_DEPLOYMENT_GUIDE.md)
 
-### 部署前端（可视化服务）
+#### 后端部署
 
-1. 在 Replit 创建新 Python 项目 `steam-dashboard`
-2. 上传 `frontend/` 目录下的所有文件
-3. 在 Replit **Secrets** 中配置：
-   - `DATABASE_URL`: PostgreSQL 连接字符串（与后端相同）
-4. 点击 **Run** 按钮启动服务
-5. 启用 **Always On** 保持服务运行
+1. 创建 Python Repl，命名为 `steam-collector`
+2. 上传 `backend/` 文件夹内容
+3. 配置 Secrets：`DATABASE_URL`、`STEAM_COOKIES`（可选）
+4. 设置 Cron Job：`*/10 * * * *`（每10分钟执行）
 
-部署完成后，Replit 会提供一个公开访问的 URL。
+#### 前端部署
 
-## 📊 功能说明
+1. 创建 Python Repl，命名为 `steam-dashboard`
+2. 上传 `frontend/` 文件夹内容
+3. 配置 Secret：`DATABASE_URL`
+4. 部署为 Always On
 
-### 后端采集器
+### 其他云平台
 
-- **Steam API 调用**：使用 `IPlayerService/GetOwnedGames` 接口获取玩家游戏数据
-- **数据去重**：比较游戏 ID 列表和 `playtime_forever` 字段，只有变化时才保存
-- **多玩家支持**：从 `config.toml` 读取玩家列表，依次采集数据
-- **错误处理**：网络异常、API 限流等情况的容错处理
+- **Railway**: 支持 PostgreSQL 和定时任务
+- **Fly.io**: 支持容器化部署
+- **Render**: 支持 Cron Jobs
+- **Vercel**: 前端可部署为 Serverless
 
-### 前端可视化
+## 📊 数据格式
 
-#### 主要路由
-
-- `/` - 玩家列表首页
-- `/player/{player_id}` - 玩家详细分析页面（默认显示最近 7 天）
-- `/player/{player_id}?days=14` - 自定义天数（1-30 天）
-
-#### API 端点
-
-- `GET /api/players` - 获取所有玩家列表
-- `GET /api/snapshots/{player_id}?days=7` - 获取原始快照数据
-- `GET /api/analysis/{player_id}?days=7` - 获取分析后的数据（JSON）
-
-#### 可视化图表
-
-1. **游戏时长推断时间轴（甘特图）**
-   - 横轴：日期时间
-   - 纵轴：游戏名称
-   - 色块：推断的游玩时间区间
-
-2. **游戏时长分布（饼图）**
-   - 显示各游戏时长占比
-   - Top 10 游戏 + 其他
-
-3. **游戏时长排名（柱状图）**
-   - 按时长降序排列
-   - 显示 Top 15 游戏
-
-4. **游玩活跃度分析（柱状图）**
-   - 按 24 小时统计游玩活跃度
-   - 帮助了解游玩习惯
-
-## 🔧 技术栈
-
-### 后端
-
-- **Python 3.10+**
-- **requests** - HTTP 请求
-- **psycopg2** - PostgreSQL 驱动
-- **python-dotenv** - 环境变量管理
-- **toml** - 配置文件解析
-
-### 前端
-
-- **FastAPI** - 现代 Web 框架
-- **Uvicorn** - ASGI 服务器
-- **Plotly** - 交互式可视化
-- **Pandas** - 数据处理
-
-### 数据库
-
-- **PostgreSQL** - 关系型数据库
-- **JSONB** - 存储游戏数据快照
-
-## 📝 数据库结构
+### 数据库表结构
 
 ```sql
 CREATE TABLE game_snapshots (
     id SERIAL PRIMARY KEY,
-    player_id VARCHAR(20) NOT NULL,      -- Steam ID
-    player_name VARCHAR(100),             -- 玩家名称
-    snapshot_time TIMESTAMP NOT NULL,     -- 快照时间
-    games_data JSONB NOT NULL,            -- 游戏数据（JSON）
-    created_at TIMESTAMP DEFAULT NOW()
+    player_id VARCHAR(20) NOT NULL,
+    player_name VARCHAR(100),
+    snapshot_time TIMESTAMPTZ NOT NULL,  -- UTC 时间
+    games_data JSONB NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 ```
 
-### 快照数据格式
+### 爬虫数据格式
 
 ```json
 {
-  "game_count": 150,
-  "games": [
+  "data_source": "web_scraper",
+  "game_count": 3,
+  "recent_games": [
     {
+      "game_name": "Counter-Strike 2",
       "appid": 730,
-      "name": "Counter-Strike 2",
-      "playtime_forever": 12345,
-      "playtime_2weeks": 240
+      "playtime_total": 722.0,
+      "last_played": "11月23日",
+      "achievements": "1 / 1",
+      "achievements_unlocked": 1,
+      "achievements_total": 1
     }
   ]
 }
 ```
 
-## 🎮 使用场景
+### 时间处理
 
-1. **追踪游戏时长**：即使在 Steam 隐身模式下，也能推断实际游玩时间
-2. **游玩习惯分析**：了解自己或朋友的游戏偏好和活跃时段
-3. **游戏统计**：查看各游戏的总游玩时长和排名
-4. **数据可视化**：直观的图表展示，便于分析和分享
+- **后端**: 使用 `datetime.now(timezone.utc)` 记录 UTC 时间
+- **数据库**: 存储为 `TIMESTAMPTZ`（带时区时间戳）
+- **API**: 返回 ISO 8601 格式（如 `2025-11-24T15:00:00+00:00`）
+- **前端**: Plotly 自动转换为浏览器本地时区显示
 
-## ⚠️ 注意事项
+## 🔧 使用说明
 
-1. **API 限流**：Steam API 有调用频率限制，建议轮询间隔不少于 5 分钟
-2. **隐私设置**：只能获取公开个人资料的玩家数据
-3. **时间推断**：推断的游玩时间是基于快照差异的估算，可能与实际有偏差
-4. **数据存储**：长期运行会积累大量快照数据，注意数据库容量
+### 定时采集设置
 
-## 🔒 隐私声明
+#### 方式 1：使用 Cron（Linux/macOS）
 
-本工具仅使用 Steam 公开 API 获取公开数据，不涉及任何隐私信息的非法获取。请遵守 Steam 使用条款和相关法律法规。
+```bash
+# 编辑 crontab
+crontab -e
 
-## 📄 许可证
+# 添加定时任务（每10分钟）
+*/10 * * * * cd /path/to/backend && uv run python collector.py
+```
 
-MIT License
+#### 方式 2：使用 Windows 任务计划程序
+
+1. 打开"任务计划程序"
+2. 创建基本任务
+3. 触发器：每10分钟
+4. 操作：启动程序 `python`，参数 `collector.py`，起始于 `backend/` 目录
+
+#### 方式 3：使用 Python 循环脚本
+
+创建 `backend/scheduler.py`：
+
+```python
+import time
+import subprocess
+from datetime import datetime
+
+INTERVAL = 600  # 10 分钟
+
+while True:
+    print(f"[{datetime.now()}] 开始采集...")
+    subprocess.run(['python', 'collector.py'])
+    print(f"等待 {INTERVAL} 秒...")
+    time.sleep(INTERVAL)
+```
+
+运行：
+
+```bash
+cd backend
+python scheduler.py
+```
+
+### 查看分析结果
+
+1. 访问前端 URL（如 <http://localhost:8000）>
+2. 选择要查看的玩家
+3. 查看以下图表：
+   - **时间轴甘特图**: 推断的游玩时段
+   - **游戏时长饼图**: 各游戏时长占比
+   - **游戏排行榜**: 游玩时长排序
+   - **活跃热力图**: 按小时统计活跃度
+
+## ❓ 常见问题
+
+### Q: 为什么时间轴上只有少数几个点？
+
+**A**: 需要持续采集一段时间才能积累足够数据。建议：
+
+- 设置每10分钟采集一次
+- 至少运行几个小时
+- 数据越多，推断越准确
+
+### Q: 如何访问好友的私密资料？
+
+**A**: 需要配置 Steam Cookie：
+
+1. 参考 [`COOKIE_GUIDE.md`](COOKIE_GUIDE.md) 获取 Cookie
+2. 在 `.env` 中配置 `STEAM_COOKIES`
+3. 重启采集器
+
+### Q: 数据存储多久？
+
+**A**: 默认永久保存。建议定期清理：
+
+```sql
+-- 删除30天前的数据
+DELETE FROM game_snapshots 
+WHERE snapshot_time < NOW() - INTERVAL '30 days';
+```
+
+### Q: 能追踪所有游戏吗？
+
+**A**: 爬虫版本只能获取"最新动态"中的3个游戏。如需追踪所有游戏，可以：
+
+- 通过频繁采集（如每5分钟）捕获更多游戏
+- 或使用旧版 Steam API（需要 API Key）
+
+### Q: 为什么某个玩家无法采集？
+
+**可能原因**：
+
+1. 账号设为私密
+2. 不是你的好友（且未配置 Cookie）
+3. Steam ID 错误
+4. 网络连接问题
+
+**解决方案**：
+
+1. 确认账号公开或配置 Cookie
+2. 检查 Steam ID 是否正确（64位数字）
+3. 查看采集器日志了解具体错误
+
+### Q: 时区显示不正确？
+
+**A**:
+
+- 后端统一使用 UTC 时间存储
+- 前端自动转换为浏览器本地时区
+- 确认浏览器时区设置正确
+
+### Q: 如何备份数据？
+
+**备份数据库**：
+
+```bash
+# 导出数据
+pg_dump "数据库连接字符串" > backup.sql
+
+# 恢复数据
+psql "数据库连接字符串" < backup.sql
+```
+
+## 📚 相关文档
+
+- [爬虫版本详细说明](README_SCRAPER.md)
+- [Cookie 获取指南](COOKIE_GUIDE.md)
+- [Replit 部署指南](REPLIT_DEPLOYMENT_GUIDE.md)
+- [Steam Web API 文档](https://steamcommunity.com/dev)
+
+## 🛠️ 技术栈
+
+### 后端
+
+- **Python 3.10+**
+- **requests** - HTTP 请求
+- **BeautifulSoup4** - HTML 解析
+- **psycopg2** - PostgreSQL 驱动
+- **python-dotenv** - 环境变量管理
+
+### 前端
+
+- **FastAPI** - Web 框架
+- **Uvicorn** - ASGI 服务器
+- **Plotly** - 数据可视化
+- **Pandas** - 数据处理
+- **Jinja2** - 模板引擎
+
+### 数据库
+
+- **PostgreSQL 14+**
+- **JSONB** - 灵活的 JSON 存储
+
+## 🔄 版本历史
+
+### V2.0 (2024-11-24) - 爬虫版本
+
+- ✨ 使用网页爬虫替代 Steam Web API
+- ✨ 支持 Steam Cookie 登录
+- ✨ 统一 UTC 时区处理
+- ✨ 前端自动时区转换
+- 📝 完整的部署文档
+
+### V1.0 (初始版本)
+
+- 基于 Steam Web API
+- 基础数据采集和可视化
 
 ## 🤝 贡献
 
 欢迎提交 Issue 和 Pull Request！
 
-## 📮 联系方式
+## 📄 许可证
 
-如有问题或建议，请通过 GitHub Issues 联系。
+MIT License
+
+## ⚠️ 免责声明
+
+本工具仅用于个人学习和数据分析。使用时请：
+
+- 遵守 Steam 使用条款
+- 尊重他人隐私
+- 不要过于频繁请求（建议间隔 ≥5 分钟）
 
 ---
 
-**Happy Gaming! 🎮**
+**作者**: Your Name  
+**最后更新**: 2024-11-24

@@ -153,6 +153,34 @@ class GameplayAnalyzer:
     """游戏时长分析器"""
     
     @staticmethod
+    def _extract_games_from_snapshot(snapshot_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        从快照中提取游戏列表（兼容多种数据格式）
+        
+        Args:
+            snapshot_data: 快照的 games_data 字段
+            
+        Returns:
+            标准化的游戏列表
+        """
+        # 判断数据来源
+        data_source = snapshot_data.get('data_source', 'steam_api')
+        
+        if data_source == 'web_scraper':
+            # 新格式：爬虫数据
+            games = snapshot_data.get('recent_games', [])
+            # 标准化：爬虫的时长是小时，需要转换为分钟
+            for game in games:
+                if 'playtime_forever' not in game and 'playtime_total' in game:
+                    # 小时转分钟
+                    game['playtime_forever'] = int(game['playtime_total'] * 60)
+        else:
+            # 旧格式：Steam API 数据
+            games = snapshot_data.get('games', [])
+        
+        return games
+    
+    @staticmethod
     def calculate_playtime_changes(snapshots: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         计算相邻快照之间的游戏时长增量
@@ -177,13 +205,17 @@ class GameplayAnalyzer:
             prev_snapshot = snapshots[i - 1]
             curr_snapshot = snapshots[i]
             
+            # 使用新方法提取游戏列表（兼容多种格式）
+            prev_games_list = GameplayAnalyzer._extract_games_from_snapshot(prev_snapshot['games_data'])
+            curr_games_list = GameplayAnalyzer._extract_games_from_snapshot(curr_snapshot['games_data'])
+            
             prev_games = {
                 game['appid']: game 
-                for game in prev_snapshot['games_data'].get('games', [])
+                for game in prev_games_list
             }
             curr_games = {
                 game['appid']: game 
-                for game in curr_snapshot['games_data'].get('games', [])
+                for game in curr_games_list
             }
             
             # 比较每个游戏的时长
@@ -195,9 +227,14 @@ class GameplayAnalyzer:
                 
                 # 只记录有增长的游戏
                 if playtime_increase > 0:
+                    # 兼容多种游戏名称字段
+                    game_name = (curr_game.get('game_name') or 
+                                curr_game.get('name') or 
+                                f'Game {appid}')
+                    
                     gameplay_records.append({
                         'game_id': appid,
-                        'game_name': curr_game.get('name', f'Game {appid}'),
+                        'game_name': game_name,
                         'start_time': prev_snapshot['snapshot_time'],
                         'end_time': curr_snapshot['snapshot_time'],
                         'playtime_increase': playtime_increase,
@@ -287,17 +324,27 @@ class PlotlyVisualizer:
         game_colors = {game: colors[i] for i, game in enumerate(games)}
         
         for _, record in df.iterrows():
+            # 确保时间是 datetime 对象
+            start_time = pd.to_datetime(record['start_time'])
+            end_time = pd.to_datetime(record['end_time'])
+            
+            # 如果时间是 naive（无时区信息），假定为 UTC
+            if start_time.tzinfo is None:
+                start_time = start_time.replace(tzinfo=timezone.utc)
+            if end_time.tzinfo is None:
+                end_time = end_time.replace(tzinfo=timezone.utc)
+            
             fig.add_trace(go.Bar(
                 name=record['game_name'],
-                x=[record['end_time'] - record['start_time']],
+                x=[end_time - start_time],
                 y=[record['game_name']],
-                base=record['start_time'],
+                base=start_time,
                 orientation='h',
                 marker=dict(color=game_colors[record['game_name']]),
                 hovertemplate=(
                     f"<b>{record['game_name']}</b><br>"
-                    f"开始: {record['start_time'].strftime('%Y-%m-%d %H:%M')}<br>"
-                    f"结束: {record['end_time'].strftime('%Y-%m-%d %H:%M')}<br>"
+                    f"开始: %{{base|%Y-%m-%d %H:%M %Z}}<br>"
+                    f"结束: %{{base|%Y-%m-%d %H:%M %Z}}<br>"
                     f"时长增加: {record['playtime_increase']} 分钟<br>"
                     "<extra></extra>"
                 ),
@@ -305,7 +352,7 @@ class PlotlyVisualizer:
             ))
         
         fig.update_layout(
-            title="游戏时长推断时间轴（甘特图）",
+            title="游戏时长推断时间轴（甘特图）<br><sub>⏰ 时间显示为您的本地时区</sub>",
             xaxis_title="时间",
             yaxis_title="游戏",
             height=max(400, len(games) * 40),
@@ -609,9 +656,13 @@ async def api_get_snapshots(
     
     snapshots = db_manager.get_player_snapshots(player_id, days)
     
-    # 转换 datetime 为字符串
+    # 转换 datetime 为 ISO 8601 格式（带时区）
     for snapshot in snapshots:
-        snapshot['snapshot_time'] = snapshot['snapshot_time'].isoformat()
+        dt = snapshot['snapshot_time']
+        # 如果没有时区信息，假定为 UTC
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        snapshot['snapshot_time'] = dt.isoformat()
     
     return {"snapshots": snapshots}
 
