@@ -17,6 +17,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import plotly.graph_objects as go
+import plotly.express as px
 from plotly.subplots import make_subplots
 import pandas as pd
 
@@ -293,7 +294,11 @@ class PlotlyVisualizer:
     @staticmethod
     def create_gantt_chart(gameplay_records: List[Dict[str, Any]]) -> go.Figure:
         """
-        创建甘特图展示游玩时间轴
+        创建甘特图展示游玩时间轴（基于时长反推实际游玩时段）
+        
+        逻辑：
+        - 快照时间 (end_time) = 游玩结束时间
+        - 实际开始时间 = end_time - playtime_increase
         
         Args:
             gameplay_records: 游玩记录列表
@@ -310,59 +315,108 @@ class PlotlyVisualizer:
                 x=0.5, y=0.5, showarrow=False,
                 font=dict(size=20)
             )
+            fig.update_layout(
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                font=dict(color='#f8fafc'),
+            )
             return fig
         
         # 准备数据
         df = pd.DataFrame(gameplay_records)
+        df['end_time'] = pd.to_datetime(df['end_time'])
         
-        # 创建甘特图
-        fig = go.Figure()
+        # 基于快照时间和时长增加，反推实际游玩时段
+        # 游玩结束时间 = 快照时间
+        # 游玩开始时间 = 快照时间 - 时长增加
+        df['inferred_end'] = df['end_time']
+        df['inferred_start'] = df['end_time'] - pd.to_timedelta(df['playtime_increase'], unit='m')
         
-        # 按游戏分组
-        games = df['game_name'].unique()
+        # 计算时长（毫秒），用于 go.Bar 的 x 值
+        df['duration_ms'] = df['playtime_increase'] * 60 * 1000  # 分钟转毫秒
+        
+        # 获取所有游戏并分配颜色
+        games = df['game_name'].unique().tolist()
         colors = PlotlyVisualizer._generate_colors(len(games))
         game_colors = {game: colors[i] for i, game in enumerate(games)}
         
+        fig = go.Figure()
+        
+        # 记录已添加图例的游戏
+        legend_added = set()
+        
+        # 使用 go.Bar 绘制，整个柱体都可以响应 hover
         for _, record in df.iterrows():
-            # 确保时间是 datetime 对象
-            start_time = pd.to_datetime(record['start_time'])
-            end_time = pd.to_datetime(record['end_time'])
+            game = record['game_name']
+            color = game_colors[game]
             
-            # 如果时间是 naive（无时区信息），假定为 UTC
-            if start_time.tzinfo is None:
-                start_time = start_time.replace(tzinfo=timezone.utc)
-            if end_time.tzinfo is None:
-                end_time = end_time.replace(tzinfo=timezone.utc)
+            inferred_start = record['inferred_start']
+            inferred_end = record['inferred_end']
+            
+            # 格式化时间显示
+            start_str = inferred_start.strftime('%m-%d %H:%M')
+            end_str = inferred_end.strftime('%m-%d %H:%M')
+            
+            show_legend = game not in legend_added
+            if show_legend:
+                legend_added.add(game)
             
             fig.add_trace(go.Bar(
-                name=record['game_name'],
-                x=[end_time - start_time],
-                y=[record['game_name']],
-                base=start_time,
+                name=game,
+                y=[game],
+                x=[record['duration_ms']],
+                base=[inferred_start],
                 orientation='h',
-                marker=dict(color=game_colors[record['game_name']]),
-                hovertemplate=(
-                    f"<b>{record['game_name']}</b><br>"
-                    f"开始: %{{base|%Y-%m-%d %H:%M %Z}}<br>"
-                    f"结束: %{{base|%Y-%m-%d %H:%M %Z}}<br>"
-                    f"时长增加: {record['playtime_increase']} 分钟<br>"
-                    "<extra></extra>"
+                marker=dict(
+                    color=color,
+                    opacity=0.85,
+                    line=dict(color=color, width=1)
                 ),
-                showlegend=False
+                width=0.6,  # 柱状条高度（0-1范围）
+                showlegend=show_legend,
+                legendgroup=game,
+                hovertemplate=(
+                    f"<b>{game}</b><br>"
+                    f"推断游玩: {start_str} → {end_str}<br>"
+                    f"游玩时长: {record['playtime_increase']} 分钟<br>"
+                    "<extra></extra>"
+                )
             ))
         
+        # 设置布局
         fig.update_layout(
-            title="游戏时长推断时间轴（甘特图）<br><sub>⏰ 时间显示为您的本地时区</sub>",
-            xaxis_title="时间",
-            yaxis_title="游戏",
-            height=max(400, len(games) * 40),
+            title="游戏时长推断时间轴（甘特图）<br><sub>⏰ 基于快照时间和时长增加推断实际游玩时段</sub>",
+            xaxis=dict(
+                title="时间",
+                type='date',
+                gridcolor='rgba(255,255,255,0.15)',
+                tickformat='%m-%d %H:%M',
+                showgrid=True,
+                zeroline=False
+            ),
+            yaxis=dict(
+                title="游戏",
+                gridcolor='rgba(255,255,255,0.1)',
+                showgrid=True,
+                zeroline=False,
+                categoryorder='total ascending'  # 按游玩时长排序
+            ),
+            height=max(300, len(games) * 80 + 120),
             hovermode='closest',
-            xaxis=dict(type='date', gridcolor='rgba(255,255,255,0.1)'),
-            yaxis=dict(gridcolor='rgba(255,255,255,0.1)'),
             paper_bgcolor='rgba(0,0,0,0)',
             plot_bgcolor='rgba(0,0,0,0)',
             font=dict(color='#f8fafc'),
-            margin=dict(l=20, r=20, t=40, b=20)
+            margin=dict(l=20, r=20, t=60, b=40),
+            barmode='overlay',  # 允许柱状条重叠
+            showlegend=True,
+            legend=dict(
+                orientation='h',
+                yanchor='bottom',
+                y=1.02,
+                xanchor='right',
+                x=1,
+                title=None
+            )
         )
         
         return fig
