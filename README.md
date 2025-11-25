@@ -104,7 +104,7 @@ steam_community_info_analysis/
 
 - **Python 3.10+**
 - **uv** (Python 包管理器)
-- **PostgreSQL 数据库**（推荐使用 [Neon](https://neon.tech)）
+- **PostgreSQL 数据库**
 
 #### 安装 uv
 
@@ -153,11 +153,11 @@ python init_database.py
 
 ```toml
 [[steam.players]]
-steamid = "76561198958724637"
-vanity_url = "morbisol"  # 可选，个性化URL
+steamid = "1234567890"
+vanity_url = "aaa"  # 可选，个性化URL
 
 [[steam.players]]
-steamid = "76561198817252303"
+steamid = "2345678901"
 # 如果没有个性化URL，只填 steamid 即可
 ```
 
@@ -221,7 +221,7 @@ uv run python collector.py
 
 ```
 2025-11-24 15:00:00 - INFO - 数据库连接成功
-2025-11-24 15:00:00 - INFO - 开始采集玩家数据: 76561198958724637
+2025-11-24 15:00:00 - INFO - 开始采集玩家数据: 1234567890
 2025-11-24 15:00:03 - INFO - 成功爬取到 3 个最新游戏
 2025-11-24 15:00:05 - INFO - 成功保存玩家快照（3 个游戏）
 ```
