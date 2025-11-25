@@ -5,8 +5,10 @@ Steam 游戏时长数据采集器 V2 - 基于网页爬虫
 """
 
 import os
+import sys
 import json
 import logging
+import hashlib
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 import psycopg2
@@ -16,12 +18,36 @@ import toml
 
 from steam_scraper import SteamProfileScraper
 
-# 配置日志
+# 配置日志 - 使用更精确的时间格式
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s.%(msecs)03d - %(name)s - %(levelname)s - [PID:%(process)d] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
 )
 logger = logging.getLogger(__name__)
+
+
+def generate_data_hash(games_data: List[Dict[str, Any]]) -> str:
+    """
+    生成游戏数据的哈希值，用于数据校验
+    
+    Args:
+        games_data: 游戏数据列表
+        
+    Returns:
+        数据哈希值
+    """
+    # 只对关键字段进行哈希
+    key_data = []
+    for game in games_data:
+        key_data.append({
+            'appid': game.get('appid'),
+            'game_name': game.get('game_name'),
+            'playtime_total': game.get('playtime_total')
+        })
+    
+    data_str = json.dumps(key_data, sort_keys=True, ensure_ascii=False)
+    return hashlib.md5(data_str.encode()).hexdigest()[:8]
 
 
 class SteamCollectorV2:
@@ -179,31 +205,61 @@ class SteamCollectorV2:
             steamid: 玩家的 Steam ID
             vanity_url: 玩家的个性化 URL（可选）
         """
-        logger.info(f"开始采集玩家数据: {steamid}")
+        logger.info(f"========== 开始采集玩家 {steamid} ==========")
         
         # 爬取游戏数据
+        logger.info(f"[{steamid}] 正在爬取游戏数据...")
         games_data = self.scraper.scrape_recent_games(steamid, vanity_url)
+        
         if not games_data:
-            logger.warning(f"无法获取玩家 {steamid} 的游戏数据，可能是账号私密或网络问题")
+            logger.warning(f"[{steamid}] 无法获取游戏数据，可能是账号私密或网络问题")
+            logger.info(f"========== 完成采集玩家 {steamid} (无数据) ==========")
             return
         
+        # 计算数据哈希，用于追踪
+        data_hash = generate_data_hash(games_data)
+        logger.info(f"[{steamid}] 爬取到 {len(games_data)} 个游戏，数据哈希: {data_hash}")
+        
+        # 打印详细的游戏列表（用于调试）
+        for i, game in enumerate(games_data, 1):
+            logger.info(f"[{steamid}] 游戏{i}: {game.get('game_name')} - {game.get('playtime_total', 0)}h (appid: {game.get('appid')})")
+        
         # 获取玩家名称
+        logger.info(f"[{steamid}] 正在获取玩家名称...")
         player_name = self.scraper.get_player_name(steamid, vanity_url)
         if not player_name:
             player_name = vanity_url or steamid
+        logger.info(f"[{steamid}] 玩家名称: {player_name}")
         
         # 检查数据是否有变化
+        logger.info(f"[{steamid}] 正在检查数据变化...")
         last_snapshot = self.get_last_snapshot(steamid)
         if not self.is_data_changed(last_snapshot, games_data):
-            logger.info(f"玩家 {steamid} 的数据无变化，跳过保存")
+            logger.info(f"[{steamid}] 数据无变化，跳过保存")
+            logger.info(f"========== 完成采集玩家 {steamid} (无变化) ==========")
+            return
+        
+        # 保存快照前再次确认数据一致性
+        save_hash = generate_data_hash(games_data)
+        if save_hash != data_hash:
+            logger.error(f"[{steamid}] 数据一致性校验失败！爬取哈希: {data_hash}, 保存哈希: {save_hash}")
+            logger.info(f"========== 完成采集玩家 {steamid} (校验失败) ==========")
             return
         
         # 保存快照
-        self.save_snapshot(steamid, player_name, games_data)
+        logger.info(f"[{steamid}] 正在保存快照...")
+        success = self.save_snapshot(steamid, player_name, games_data)
         
-        logger.info(f"玩家 {player_name} ({steamid}) 最近玩了 {len(games_data)} 个游戏")
-        for game in games_data:
-            logger.info(f"  - {game['game_name']}: {game.get('playtime_total', 0)} 小时")
+        if success:
+            logger.info(f"[{steamid}] 快照保存成功，数据哈希: {data_hash}")
+        else:
+            logger.error(f"[{steamid}] 快照保存失败")
+        
+        logger.info(f"========== 完成采集玩家 {steamid} ==========")
+        
+        # 添加短暂延迟，防止请求过快
+        import time
+        time.sleep(0.5)
 
 
 def load_config():
@@ -224,6 +280,10 @@ def load_config():
 
 def main():
     """主函数"""
+    logger.info("=" * 60)
+    logger.info("Steam 数据采集器启动")
+    logger.info("=" * 60)
+    
     # 加载环境变量
     env_path = os.path.join(os.path.dirname(__file__), '.env')
     if os.path.exists(env_path):
@@ -249,6 +309,38 @@ def main():
         logger.error("配置文件中未找到玩家信息")
         return
     
+    logger.info(f"配置加载完成，共 {len(players)} 个玩家")
+    
+    # 使用文件锁防止并发执行
+    # Windows 不支持 fcntl，使用简单的锁文件方案
+    lock_path = os.path.join(os.path.dirname(__file__), '.collector.lock')
+    
+    # 检查是否有其他实例在运行
+    if os.path.exists(lock_path):
+        try:
+            with open(lock_path, 'r') as f:
+                lock_info = f.read()
+            logger.warning(f"发现锁文件，可能有另一个任务在运行: {lock_info}")
+            # 检查锁文件是否过期（超过 5 分钟视为过期）
+            lock_mtime = os.path.getmtime(lock_path)
+            if datetime.now().timestamp() - lock_mtime > 300:
+                logger.warning("锁文件已过期，删除并继续执行")
+                os.remove(lock_path)
+            else:
+                logger.error("另一个采集任务正在运行，退出")
+                return
+        except Exception as e:
+            logger.warning(f"检查锁文件时出错: {e}")
+    
+    # 创建锁文件
+    try:
+        with open(lock_path, 'w') as f:
+            f.write(f"PID: {os.getpid()}, 启动时间: {datetime.now().isoformat()}")
+        logger.info(f"创建锁文件: {lock_path}")
+    except Exception as e:
+        logger.error(f"创建锁文件失败: {e}")
+        return
+    
     # 初始化采集器
     collector = SteamCollectorV2(db_url, steam_cookies)
     
@@ -256,14 +348,16 @@ def main():
         # 连接数据库
         collector.connect_db()
         
-        # 采集每个玩家的数据
-        for player in players:
+        # 采集每个玩家的数据（串行执行，确保数据隔离）
+        for idx, player in enumerate(players, 1):
             steamid = player.get('steamid')
             vanity_url = player.get('vanity_url')
             
             if not steamid:
                 logger.warning(f"玩家配置缺少 steamid: {player}")
                 continue
+            
+            logger.info(f">>> 处理玩家 {idx}/{len(players)}: {steamid}")
             
             try:
                 collector.collect_player_data(steamid, vanity_url)
@@ -272,8 +366,15 @@ def main():
                 import traceback
                 traceback.print_exc()
                 continue
+            
+            # 在玩家之间添加延迟，避免请求过快
+            if idx < len(players):
+                import time
+                time.sleep(1)
         
+        logger.info("=" * 60)
         logger.info("数据采集完成")
+        logger.info("=" * 60)
         
     except Exception as e:
         logger.error(f"采集过程出错: {e}")
@@ -282,6 +383,14 @@ def main():
     finally:
         # 关闭数据库连接
         collector.close_db()
+        
+        # 删除锁文件
+        try:
+            if os.path.exists(lock_path):
+                os.remove(lock_path)
+                logger.info("已删除锁文件")
+        except Exception as e:
+            logger.warning(f"删除锁文件失败: {e}")
 
 
 if __name__ == '__main__':
