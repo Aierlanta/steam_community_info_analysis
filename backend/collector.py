@@ -9,6 +9,8 @@ import sys
 import json
 import logging
 import hashlib
+import signal
+import threading
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -18,6 +20,15 @@ from dotenv import load_dotenv
 import toml
 
 from steam_scraper import SteamProfileScraper
+
+# 全局关闭事件，用于优雅终止
+shutdown_event = threading.Event()
+
+def signal_handler(signum, frame):
+    """信号处理器，用于优雅关闭"""
+    sig_name = signal.Signals(signum).name
+    logger.warning(f"收到信号 {sig_name}，正在优雅关闭...")
+    shutdown_event.set()
 
 # 配置日志 - 使用更精确的时间格式
 logging.basicConfig(
@@ -296,6 +307,10 @@ def load_config():
 
 def main():
     """主函数"""
+    # 注册信号处理器
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+    
     logger.info("=" * 60)
     logger.info("Steam 数据采集器启动")
     logger.info("=" * 60)
@@ -379,32 +394,74 @@ def main():
     logger.info(f"使用 {max_workers} 个线程进行并发采集")
 
     try:
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # 为每个线程创建一个独立的 collector 实例
-            futures = {
-                executor.submit(
-                    SteamCollectorV2(db_url, steam_cookies).collect_player_data,
-                    player.get('steamid'),
-                    player.get('vanity_url')
-                ): player
-                for player in players if player.get('steamid')
-            }
+        executor = ThreadPoolExecutor(max_workers=max_workers)
+        
+        # 为每个线程创建一个独立的 collector 实例
+        futures = {
+            executor.submit(
+                SteamCollectorV2(db_url, steam_cookies).collect_player_data,
+                player.get('steamid'),
+                player.get('vanity_url')
+            ): player
+            for player in players if player.get('steamid')
+        }
+        
+        success_count = 0
+        fail_count = 0
+        
+        # 使用超时轮询方式等待结果，以便响应信号
+        pending = set(futures.keys())
+        while pending and not shutdown_event.is_set():
+            # 每次等待最多 1 秒，以便检查关闭信号
+            done_batch = set()
+            for future in list(pending):
+                if future.done():
+                    done_batch.add(future)
             
-            success_count = 0
-            fail_count = 0
-            
-            for future in as_completed(futures):
-                result = future.result()
-                if result:
-                    success_count += 1
-                else:
+            for future in done_batch:
+                pending.discard(future)
+                try:
+                    result = future.result(timeout=0)
+                    if result:
+                        success_count += 1
+                    else:
+                        fail_count += 1
+                    
+                    player_info = futures[future]
+                    logger.info(f"玩家 {player_info.get('steamid')} 处理完成，结果: {'成功' if result else '失败'}")
+                except Exception as e:
                     fail_count += 1
-                
-                player_info = futures[future]
-                logger.info(f"玩家 {player_info.get('steamid')} 处理完成，结果: {'成功' if result else '失败'}")
+                    player_info = futures[future]
+                    logger.error(f"玩家 {player_info.get('steamid')} 处理异常: {e}")
+            
+            if pending and not done_batch:
+                # 没有完成的任务，等待一小段时间
+                shutdown_event.wait(timeout=0.5)
+        
+        # 如果收到关闭信号，优雅地等待正在运行的任务完成
+        if shutdown_event.is_set() and pending:
+            logger.warning(f"收到关闭信号，等待 {len(pending)} 个任务完成...")
+            # 给正在运行的任务最多 30 秒来完成
+            executor.shutdown(wait=True, cancel_futures=False)
+            
+            # 收集剩余结果
+            for future in pending:
+                try:
+                    if future.done():
+                        result = future.result(timeout=0)
+                        if result:
+                            success_count += 1
+                        else:
+                            fail_count += 1
+                except Exception:
+                    fail_count += 1
+        else:
+            executor.shutdown(wait=False)
         
         logger.info("=" * 60)
         logger.info(f"数据采集完成: {success_count} 个成功, {fail_count} 个失败")
+        if shutdown_event.is_set():
+            logger.info("(程序因收到关闭信号而提前结束)")
         logger.info("=" * 60)
         
     except Exception as e:
