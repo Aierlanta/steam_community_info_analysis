@@ -292,7 +292,7 @@ class PlotlyVisualizer:
     """Plotly 可视化生成器"""
     
     @staticmethod
-    def create_gantt_chart(gameplay_records: List[Dict[str, Any]]) -> go.Figure:
+    def create_gantt_chart(gameplay_records: List[Dict[str, Any]], days: int = 7) -> go.Figure:
         """
         创建甘特图展示游玩时间轴（基于时长反推实际游玩时段）
         
@@ -302,6 +302,7 @@ class PlotlyVisualizer:
         
         Args:
             gameplay_records: 游玩记录列表
+            days: 显示的天数范围（用于限制X轴范围）
             
         Returns:
             Plotly Figure 对象
@@ -345,6 +346,10 @@ class PlotlyVisualizer:
         # 记录已添加图例的游戏
         legend_added = set()
         
+        # 计算最小显示时长（至少显示30分钟的宽度，让短时游玩也能看清）
+        min_display_minutes = 30
+        min_display_ms = min_display_minutes * 60 * 1000
+        
         # 使用 go.Bar 绘制，整个柱体都可以响应 hover
         for _, record in df.iterrows():
             game = record['game_name']
@@ -352,6 +357,10 @@ class PlotlyVisualizer:
             
             inferred_start = record['inferred_start']
             inferred_end = record['inferred_end']
+            actual_duration_ms = record['duration_ms']
+            
+            # 确保柱子有最小显示宽度
+            display_duration_ms = max(actual_duration_ms, min_display_ms)
             
             # 格式化时间显示
             start_str = inferred_start.strftime('%m-%d %H:%M')
@@ -364,15 +373,15 @@ class PlotlyVisualizer:
             fig.add_trace(go.Bar(
                 name=game,
                 y=[game],
-                x=[record['duration_ms']],
+                x=[display_duration_ms],
                 base=[inferred_start],
                 orientation='h',
                 marker=dict(
                     color=color,
                     opacity=0.85,
-                    line=dict(color=color, width=1)
+                    line=dict(color=color, width=2)
                 ),
-                width=0.6,  # 柱状条高度（0-1范围）
+                width=0.7,  # 柱状条高度（0-1范围），增加到0.7
                 showlegend=show_legend,
                 legendgroup=game,
                 hovertemplate=(
@@ -383,6 +392,11 @@ class PlotlyVisualizer:
                 )
             ))
         
+        # 计算X轴范围：限制为最近N天
+        now = datetime.now(APP_TZ)
+        x_range_start = now - timedelta(days=days)
+        x_range_end = now + timedelta(hours=2)  # 稍微延伸一点，避免最新数据被截断
+        
         # 设置布局
         fig.update_layout(
             title="游戏时长推断时间轴（甘特图）<br><sub>⏰ 基于快照时间和时长增加推断实际游玩时段</sub>",
@@ -392,7 +406,8 @@ class PlotlyVisualizer:
                 gridcolor='rgba(255,255,255,0.15)',
                 tickformat='%m-%d %H:%M',
                 showgrid=True,
-                zeroline=False
+                zeroline=False,
+                range=[x_range_start, x_range_end]  # 限制X轴范围为最近N天
             ),
             yaxis=dict(
                 title="游戏",
@@ -401,7 +416,7 @@ class PlotlyVisualizer:
                 zeroline=False,
                 categoryorder='total ascending'  # 按游玩时长排序
             ),
-            height=max(300, len(games) * 80 + 120),
+            height=max(350, len(games) * 100 + 150),  # 增加每行高度
             hovermode='closest',
             paper_bgcolor='rgba(0,0,0,0)',
             plot_bgcolor='rgba(0,0,0,0)',
@@ -626,7 +641,7 @@ async def player_dashboard(
     
     # 生成图表
     visualizer = PlotlyVisualizer()
-    gantt_fig = visualizer.create_gantt_chart(gameplay_records)
+    gantt_fig = visualizer.create_gantt_chart(gameplay_records, days)
     pie_fig = visualizer.create_pie_chart(game_totals)
     bar_fig = visualizer.create_bar_chart(game_totals)
     heatmap_fig = visualizer.create_heatmap(hour_activity)
