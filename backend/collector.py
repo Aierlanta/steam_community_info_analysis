@@ -11,6 +11,7 @@ import logging
 import hashlib
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import psycopg2
 from psycopg2.extras import Json, RealDictCursor
 from dotenv import load_dotenv
@@ -62,23 +63,25 @@ class SteamCollectorV2:
             steam_cookies: Steam Cookie 字符串（可选，用于访问好友可见的资料）
         """
         self.db_url = db_url
-        self.conn = None
         self.scraper = SteamProfileScraper(cookies=steam_cookies)
-        
+        # conn 属性将在每个线程中独立创建
+        self.conn: Optional[psycopg2.extensions.connection] = None
+
     def connect_db(self):
         """连接数据库"""
-        try:
-            self.conn = psycopg2.connect(self.db_url)
-            logger.info("数据库连接成功")
-        except Exception as e:
-            logger.error(f"数据库连接失败: {e}")
-            raise
+        if not self.conn or self.conn.closed:
+            try:
+                self.conn = psycopg2.connect(self.db_url)
+                logger.info(f"[PID:{os.getpid()}] 数据库连接成功")
+            except Exception as e:
+                logger.error(f"[PID:{os.getpid()}] 数据库连接失败: {e}")
+                raise
     
     def close_db(self):
         """关闭数据库连接"""
-        if self.conn:
+        if self.conn and not self.conn.closed:
             self.conn.close()
-            logger.info("数据库连接已关闭")
+            logger.info(f"[PID:{os.getpid()}] 数据库连接已关闭")
     
     def get_last_snapshot(self, player_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -200,69 +203,79 @@ class SteamCollectorV2:
                 self.conn.rollback()
             return False
     
-    def collect_player_data(self, steamid: str, vanity_url: Optional[str] = None):
+    def collect_player_data(self, steamid: str, vanity_url: Optional[str] = None) -> Optional[str]:
         """
-        采集单个玩家的数据
+        采集单个玩家的数据（线程安全）
         
         Args:
             steamid: 玩家的 Steam ID
             vanity_url: 玩家的个性化 URL（可选）
+        
+        Returns:
+            成功时返回 Steam ID, 失败时返回 None
         """
-        logger.info(f"========== 开始采集玩家 {steamid} ==========")
-        
-        # 爬取游戏数据
-        logger.info(f"[{steamid}] 正在爬取游戏数据...")
-        games_data = self.scraper.scrape_recent_games(steamid, vanity_url)
-        
-        if not games_data:
-            logger.warning(f"[{steamid}] 无法获取游戏数据，可能是账号私密或网络问题")
-            logger.info(f"========== 完成采集玩家 {steamid} (无数据) ==========")
-            return
-        
-        # 计算数据哈希，用于追踪
-        data_hash = generate_data_hash(games_data)
-        logger.info(f"[{steamid}] 爬取到 {len(games_data)} 个游戏，数据哈希: {data_hash}")
-        
-        # 打印详细的游戏列表（用于调试）
-        for i, game in enumerate(games_data, 1):
-            logger.info(f"[{steamid}] 游戏{i}: {game.get('game_name')} - {game.get('playtime_total', 0)}h (appid: {game.get('appid')})")
-        
-        # 获取玩家名称
-        logger.info(f"[{steamid}] 正在获取玩家名称...")
-        player_name = self.scraper.get_player_name(steamid, vanity_url)
-        if not player_name:
-            player_name = vanity_url or steamid
-        logger.info(f"[{steamid}] 玩家名称: {player_name}")
-        
-        # 检查数据是否有变化
-        logger.info(f"[{steamid}] 正在检查数据变化...")
-        last_snapshot = self.get_last_snapshot(steamid)
-        if not self.is_data_changed(last_snapshot, games_data):
-            logger.info(f"[{steamid}] 数据无变化，跳过保存")
-            logger.info(f"========== 完成采集玩家 {steamid} (无变化) ==========")
-            return
-        
-        # 保存快照前再次确认数据一致性
-        save_hash = generate_data_hash(games_data)
-        if save_hash != data_hash:
-            logger.error(f"[{steamid}] 数据一致性校验失败！爬取哈希: {data_hash}, 保存哈希: {save_hash}")
-            logger.info(f"========== 完成采集玩家 {steamid} (校验失败) ==========")
-            return
-        
-        # 保存快照
-        logger.info(f"[{steamid}] 正在保存快照...")
-        success = self.save_snapshot(steamid, player_name, games_data)
-        
-        if success:
-            logger.info(f"[{steamid}] 快照保存成功，数据哈希: {data_hash}")
-        else:
-            logger.error(f"[{steamid}] 快照保存失败")
-        
-        logger.info(f"========== 完成采集玩家 {steamid} ==========")
-        
-        # 添加短暂延迟，防止请求过快
-        import time
-        time.sleep(0.5)
+        try:
+            self.connect_db()  # 每个线程独立的数据库连接
+            logger.info(f"========== 开始采集玩家 {steamid} ==========")
+            
+            # 爬取游戏数据
+            logger.info(f"[{steamid}] 正在爬取游戏数据...")
+            games_data = self.scraper.scrape_recent_games(steamid, vanity_url)
+            
+            if not games_data:
+                logger.warning(f"[{steamid}] 无法获取游戏数据，可能是账号私密或网络问题")
+                logger.info(f"========== 完成采集玩家 {steamid} (无数据) ==========")
+                return steamid # 标记为处理完成
+            
+            # 计算数据哈希，用于追踪
+            data_hash = generate_data_hash(games_data)
+            logger.info(f"[{steamid}] 爬取到 {len(games_data)} 个游戏，数据哈希: {data_hash}")
+            
+            # 打印详细的游戏列表（用于调试）
+            for i, game in enumerate(games_data, 1):
+                logger.info(f"[{steamid}] 游戏{i}: {game.get('game_name')} - {game.get('playtime_total', 0)}h (appid: {game.get('appid')})")
+            
+            # 获取玩家名称
+            logger.info(f"[{steamid}] 正在获取玩家名称...")
+            player_name = self.scraper.get_player_name(steamid, vanity_url)
+            if not player_name:
+                player_name = vanity_url or steamid
+            logger.info(f"[{steamid}] 玩家名称: {player_name}")
+            
+            # 检查数据是否有变化
+            logger.info(f"[{steamid}] 正在检查数据变化...")
+            last_snapshot = self.get_last_snapshot(steamid)
+            if not self.is_data_changed(last_snapshot, games_data):
+                logger.info(f"[{steamid}] 数据无变化，跳过保存")
+                logger.info(f"========== 完成采集玩家 {steamid} (无变化) ==========")
+                return steamid
+            
+            # 保存快照前再次确认数据一致性
+            save_hash = generate_data_hash(games_data)
+            if save_hash != data_hash:
+                logger.error(f"[{steamid}] 数据一致性校验失败！爬取哈希: {data_hash}, 保存哈希: {save_hash}")
+                logger.info(f"========== 完成采集玩家 {steamid} (校验失败) ==========")
+                return steamid
+
+            # 保存快照
+            logger.info(f"[{steamid}] 正在保存快照...")
+            success = self.save_snapshot(steamid, player_name, games_data)
+            
+            if success:
+                logger.info(f"[{steamid}] 快照保存成功，数据哈希: {data_hash}")
+            else:
+                logger.error(f"[{steamid}] 快照保存失败")
+            
+            logger.info(f"========== 完成采集玩家 {steamid} ==========")
+            return steamid
+            
+        except Exception as e:
+            logger.error(f"采集玩家 {steamid} 数据时出错: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+        finally:
+            self.close_db() # 确保每个线程的连接都被关闭
 
 
 def load_config():
@@ -344,63 +357,61 @@ def main():
         logger.error(f"创建锁文件失败: {e}")
         return
     
-    # 初始化采集器
-    collector = SteamCollectorV2(db_url, steam_cookies)
+    # 初始化一个 collector 实例，用于验证 cookie
+    # 这个实例不会用于并发采集，避免共享 scraper session
+    main_collector = SteamCollectorV2(db_url, steam_cookies)
 
     # 验证 Cookie 有效性
     if steam_cookies:
-        if not collector.scraper.verify_cookies():
+        if not main_collector.scraper.verify_cookies():
             logger.critical("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             logger.critical("!!! Steam Cookie 已失效，请立即更新 .env 文件 !!!")
             logger.critical("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-            # 删除锁文件后退出
             try:
                 if os.path.exists(lock_path):
                     os.remove(lock_path)
             except Exception as e:
                 logger.warning(f"删除锁文件失败: {e}")
             return
-    
+
+    # 设置并发数，默认为 4
+    max_workers = config.get('steam', {}).get('max_workers', 4)
+    logger.info(f"使用 {max_workers} 个线程进行并发采集")
+
     try:
-        # 连接数据库
-        collector.connect_db()
-        
-        # 采集每个玩家的数据（串行执行，确保数据隔离）
-        for idx, player in enumerate(players, 1):
-            steamid = player.get('steamid')
-            vanity_url = player.get('vanity_url')
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # 为每个线程创建一个独立的 collector 实例
+            futures = {
+                executor.submit(
+                    SteamCollectorV2(db_url, steam_cookies).collect_player_data,
+                    player.get('steamid'),
+                    player.get('vanity_url')
+                ): player
+                for player in players if player.get('steamid')
+            }
             
-            if not steamid:
-                logger.warning(f"玩家配置缺少 steamid: {player}")
-                continue
+            success_count = 0
+            fail_count = 0
             
-            logger.info(f">>> 处理玩家 {idx}/{len(players)}: {steamid}")
-            
-            try:
-                collector.collect_player_data(steamid, vanity_url)
-            except Exception as e:
-                logger.error(f"采集玩家 {steamid} 数据时出错: {e}")
-                import traceback
-                traceback.print_exc()
-                continue
-            
-            # 在玩家之间添加延迟，避免请求过快
-            if idx < len(players):
-                import time
-                time.sleep(1)
+            for future in as_completed(futures):
+                result = future.result()
+                if result:
+                    success_count += 1
+                else:
+                    fail_count += 1
+                
+                player_info = futures[future]
+                logger.info(f"玩家 {player_info.get('steamid')} 处理完成，结果: {'成功' if result else '失败'}")
         
         logger.info("=" * 60)
-        logger.info("数据采集完成")
+        logger.info(f"数据采集完成: {success_count} 个成功, {fail_count} 个失败")
         logger.info("=" * 60)
         
     except Exception as e:
-        logger.error(f"采集过程出错: {e}")
+        logger.error(f"并发采集过程出错: {e}")
         import traceback
         traceback.print_exc()
     finally:
-        # 关闭数据库连接
-        collector.close_db()
-        
         # 删除锁文件
         try:
             if os.path.exists(lock_path):
