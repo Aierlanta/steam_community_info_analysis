@@ -12,11 +12,11 @@ max_workers = 4
 
 [[steam.players]]
 # 目标用户的 64 位 steamid（推荐），或者留空并填写 vanity_url。
-steamid = "123"
+steamid = "12345678901112131"
 vanity_url = ""
 
 # [[steam.players]]
-# steamid = "456"
+# steamid = "12345678901112132"
 # vanity_url = ""
 
 [polling]
