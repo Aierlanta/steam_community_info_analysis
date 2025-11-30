@@ -91,6 +91,7 @@ class SteamCollectorV2:
             最后一次快照数据，如果不存在返回 None
         """
         try:
+            assert self.conn is not None
             cursor = self.conn.cursor(cursor_factory=RealDictCursor)
             cursor.execute(
                 """
@@ -171,6 +172,7 @@ class SteamCollectorV2:
             保存成功返回 True，失败返回 False
         """
         try:
+            assert self.conn is not None
             cursor = self.conn.cursor()
             
             # 构造要保存的数据结构
@@ -194,7 +196,8 @@ class SteamCollectorV2:
             
         except Exception as e:
             logger.error(f"保存快照失败: {e}")
-            self.conn.rollback()
+            if self.conn:
+                self.conn.rollback()
             return False
     
     def collect_player_data(self, steamid: str, vanity_url: Optional[str] = None):
@@ -343,6 +346,20 @@ def main():
     
     # 初始化采集器
     collector = SteamCollectorV2(db_url, steam_cookies)
+
+    # 验证 Cookie 有效性
+    if steam_cookies:
+        if not collector.scraper.verify_cookies():
+            logger.critical("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            logger.critical("!!! Steam Cookie 已失效，请立即更新 .env 文件 !!!")
+            logger.critical("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            # 删除锁文件后退出
+            try:
+                if os.path.exists(lock_path):
+                    os.remove(lock_path)
+            except Exception as e:
+                logger.warning(f"删除锁文件失败: {e}")
+            return
     
     try:
         # 连接数据库

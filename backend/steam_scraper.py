@@ -362,6 +362,49 @@ class SteamProfileScraper:
             logger.error(f"获取玩家名称失败: {e}")
             return None
 
+    def verify_cookies(self) -> bool:
+        """
+        验证 Steam Cookie 是否有效（是否处于登录状态）
+
+        Returns:
+            True 如果 Cookie 有效或未设置 Cookie，False 如果 Cookie 失效
+        """
+        # 如果没有设置 cookie，则无需验证
+        if not self.session.cookies.get('sessionid') or not self.session.cookies.get('steamLoginSecure'):
+            logger.info("未设置 Steam Cookie，跳过验证")
+            return True
+
+        url = "https://steamcommunity.com/my/"
+        logger.info("正在验证 Steam Cookie 有效性...")
+        try:
+            response = self.session.get(url, timeout=self.timeout, allow_redirects=True)
+            response.raise_for_status()
+
+            # 检查是否跳转到了登录页面
+            if 'login/home' in response.url:
+                logger.warning("Cookie 已失效，页面跳转到登录页")
+                return False
+
+            # 检查页面是否包含登录后的特定元素，如用户名
+            soup = BeautifulSoup(response.text, 'html.parser')
+            persona_name_span = soup.find('span', {'class': 'actual_persona_name'})
+            
+            if persona_name_span:
+                username = persona_name_span.get_text().strip()
+                logger.info(f"✅ Steam Cookie 有效，当前登录用户: {username}")
+                return True
+            else:
+                logger.warning("❌ Steam Cookie 可能无效，未在页面上找到用户名")
+                return False
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"验证 Cookie 时发生网络错误: {e}")
+            # 网络错误，暂时认为有效，避免中断采集
+            return True
+        except Exception as e:
+            logger.error(f"验证 Cookie 时发生未知错误: {e}")
+            return False
+
 
 def test_scraper(save_html=False):
     """测试爬虫功能"""
