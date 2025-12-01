@@ -16,7 +16,7 @@ run = ["sh", "-c", "cd backend && uv sync"]
 # Nix 包管理 - 直接安装 uv
 [nix]
 channel = "stable-25_05"
-packages = ["python312", "uv"]
+packages = ["python312", "chromium", "uv"]
 
 # 部署配置
 [deployment]
