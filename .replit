@@ -13,10 +13,10 @@ run = ["sh", "-c", "cd backend && uv sync && uv run python main.py"]
 # 构建时安装依赖
 run = ["sh", "-c", "cd backend && uv sync"]
 
-# Nix 包管理 - 直接安装 uv
+# Nix 包管理 - 直接安装 uv 和 chromium
 [nix]
 channel = "stable-25_05"
-packages = ["python312", "chromium", "uv"]
+packages = ["python312", "uv", "chromium", "chromedriver"]
 
 # 部署配置
 [deployment]

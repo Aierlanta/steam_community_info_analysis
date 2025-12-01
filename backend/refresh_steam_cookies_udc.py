@@ -11,15 +11,48 @@
 
 import logging
 import os
+import shutil
 import time
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from cookie_store import load_steam_cookies, save_steam_cookies
 from dotenv import load_dotenv
 
 
 logger = logging.getLogger(__name__)
+
+
+def _is_replit_environment() -> bool:
+    """检测是否在 Replit 环境中运行。"""
+    return bool(os.getenv("REPL_ID") or os.getenv("REPLIT"))
+
+
+def _find_chromium_paths() -> tuple[Optional[str], Optional[str]]:
+    """
+    在系统中查找 chromium 和 chromedriver 的路径。
+    返回 (browser_path, driver_path) 元组。
+    """
+    browser_path = None
+    driver_path = None
+
+    # 尝试查找 chromium 浏览器
+    for browser_name in ["chromium", "chromium-browser", "google-chrome", "chrome"]:
+        path = shutil.which(browser_name)
+        if path:
+            browser_path = path
+            logger.info("找到浏览器: %s", browser_path)
+            break
+
+    # 尝试查找 chromedriver
+    for driver_name in ["chromedriver", "chromium-chromedriver"]:
+        path = shutil.which(driver_name)
+        if path:
+            driver_path = path
+            logger.info("找到 chromedriver: %s", driver_path)
+            break
+
+    return browser_path, driver_path
 
 
 def _parse_cookie_string(cookie_string: str) -> List[Dict[str, str]]:
@@ -72,8 +105,35 @@ def refresh_cookies_with_udc() -> None:
     if headless:
         options.add_argument("--headless=new")
 
+    # Replit 环境中需要添加额外的参数
+    is_replit = _is_replit_environment()
+    browser_path = None
+    driver_path = None
+
+    if is_replit:
+        logger.info("检测到 Replit 环境，正在配置 Chromium...")
+        browser_path, driver_path = _find_chromium_paths()
+
+        # 添加 Replit 环境所需的 Chrome 参数
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-gpu")
+
+        if not browser_path:
+            raise RuntimeError(
+                "Replit 环境中未找到 Chromium 浏览器，请确保 .replit 文件中包含 chromium 包"
+            )
+
     logger.info("正在启动 undetected-chromedriver（headless=%s）", headless)
-    driver = uc.Chrome(options=options)
+
+    # 构建 uc.Chrome 参数
+    chrome_kwargs = {"options": options}
+    if browser_path:
+        chrome_kwargs["browser_executable_path"] = browser_path
+    if driver_path:
+        chrome_kwargs["driver_executable_path"] = driver_path
+
+    driver = uc.Chrome(**chrome_kwargs)
     driver.set_window_size(1280, 720)
 
     try:
