@@ -28,3 +28,7 @@ run = ["sh", "-c", "cd backend && uv sync --no-dev && uv run python main.py"]
 [env]
 PYTHONIOENCODING = "utf-8"
 PYTHONUNBUFFERED = "1"
+STEAM_AUTO_REFRESH_COOKIES=1
+STEAM_COOKIES_FILE=steam_cookies.txt
+STEAM_AUTO_REFRESH_COOKIES=1
+STEAM_BROWSER_HEADLESS=1
