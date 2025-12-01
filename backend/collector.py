@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 import toml
 
 from steam_scraper import SteamProfileScraper
+from cookie_store import load_steam_cookies
 
 # 全局关闭事件，用于优雅终止
 shutdown_event = threading.Event()
@@ -315,16 +316,14 @@ def main():
     logger.info("Steam 数据采集器启动")
     logger.info("=" * 60)
     
-    # 加载环境变量
     env_path = os.path.join(os.path.dirname(__file__), '.env')
     if os.path.exists(env_path):
         load_dotenv(env_path)
     else:
         logger.warning(".env 文件不存在，尝试从环境变量读取配置")
     
-    # 获取配置
     db_url = os.getenv('DATABASE_URL')
-    steam_cookies = os.getenv('STEAM_COOKIES')  # 从环境变量读取 Cookie（可选）
+    steam_cookies = load_steam_cookies()
     
     if not db_url:
         logger.error("未配置 DATABASE_URL 环境变量")
@@ -372,15 +371,12 @@ def main():
         logger.error(f"创建锁文件失败: {e}")
         return
     
-    # 初始化一个 collector 实例，用于验证 cookie
-    # 这个实例不会用于并发采集，避免共享 scraper session
     main_collector = SteamCollectorV2(db_url, steam_cookies)
 
-    # 验证 Cookie 有效性
     if steam_cookies:
         if not main_collector.scraper.verify_cookies():
             logger.critical("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-            logger.critical("!!! Steam Cookie 已失效，请立即更新 .env 文件 !!!")
+            logger.critical("!!! Steam Cookie 已失效，请更新 Cookie 文件或 .env 中的 STEAM_COOKIES 配置 !!!")
             logger.critical("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             try:
                 if os.path.exists(lock_path):

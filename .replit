@@ -3,10 +3,10 @@
 language = "python3"
 
 # 入口文件
-entrypoint = "backend/collector.py"
+entrypoint = "backend/main.py"
 
 # 运行命令
-run = ["sh", "-c", "cd backend && uv sync && uv run python collector.py"]
+run = ["sh", "-c", "cd backend && uv sync && uv run python main.py"]
 
 # 构建配置
 [build]
@@ -22,7 +22,7 @@ packages = ["python312", "uv"]
 [deployment]
 deploymentTarget = "scheduled"
 # 定时任务
-run = ["sh", "-c", "cd backend && uv sync --no-dev && uv run python collector.py"]
+run = ["sh", "-c", "cd backend && uv sync --no-dev && uv run python main.py"]
 
 # 环境变量
 [env]
